@@ -1,6 +1,6 @@
 {
   "name": "glab-tui",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A fast, beautiful Terminal User Interface (TUI) for GitLab CI/CD pipelines",
   "main": "glab-tui",
   "bin": {
