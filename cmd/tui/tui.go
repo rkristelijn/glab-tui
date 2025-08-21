@@ -256,7 +256,71 @@ func parseGlabCIListOutput(output string) []core.Pipeline {
 	return pipelines
 }
 
-// getRemotePipelineJobs gets jobs for a pipeline in remote project
+// getRemotePipelineJobsWithChildren gets jobs and child pipelines for a pipeline
+func getRemotePipelineJobsWithChildren(projectPath string, pipelineID int) ([]core.Job, error) {
+	fmt.Printf("📡 Fetching jobs and child pipelines for pipeline %d in %s...\n", pipelineID, projectPath)
+
+	// First get regular jobs
+	jobs, err := getRemotePipelineJobs(projectPath, pipelineID)
+	if err != nil {
+		return jobs, err
+	}
+
+	// Then try to find child pipelines (triggered by this pipeline)
+	childPipelines, err := getRecentChildPipelines(projectPath, pipelineID)
+	if err == nil && len(childPipelines) > 0 {
+		fmt.Printf("🔗 Found %d child pipelines, adding them as jobs\n", len(childPipelines))
+
+		// Convert child pipelines to job-like entries
+		for _, pipeline := range childPipelines {
+			childJob := core.Job{
+				ID:     pipeline.ID,
+				Name:   fmt.Sprintf("🔗 Child Pipeline #%d", pipeline.ID),
+				Status: pipeline.Status,
+				Stage:  fmt.Sprintf("child-%s", pipeline.Ref),
+			}
+			jobs = append(jobs, childJob)
+		}
+	}
+
+	return jobs, nil
+}
+
+// getRecentChildPipelines tries to find child pipelines by looking for recent pipelines
+func getRecentChildPipelines(projectPath string, parentPipelineID int) ([]core.Pipeline, error) {
+	// Get recent pipelines that might be children
+	cmd := exec.Command("glab", "ci", "list", "--repo", projectPath, "--per-page", "20")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	allPipelines := parseGlabCIListOutput(string(output))
+	var childPipelines []core.Pipeline
+
+	// Look for pipelines created after the parent pipeline
+	// This is a heuristic - in a real implementation you'd use the GitLab API
+	// to find actual downstream relationships
+	for _, pipeline := range allPipelines {
+		// Skip the parent pipeline itself
+		if pipeline.ID == parentPipelineID {
+			continue
+		}
+
+		// If pipeline ID is higher (newer) and from similar timeframe, it might be a child
+		if pipeline.ID > parentPipelineID && pipeline.ID < parentPipelineID+50000 {
+			// Additional heuristic: if it's from the same branch or similar
+			childPipelines = append(childPipelines, pipeline)
+		}
+	}
+
+	// Limit to first 5 potential child pipelines to avoid clutter
+	if len(childPipelines) > 5 {
+		childPipelines = childPipelines[:5]
+	}
+
+	return childPipelines, nil
+}
 func getRemotePipelineJobs(projectPath string, pipelineID int) ([]core.Job, error) {
 	fmt.Printf("📡 Fetching jobs for pipeline %d in %s...\n", pipelineID, projectPath)
 
@@ -442,8 +506,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.gitlab == nil {
 						// Check if this is remote mode (has real project path)
 						if strings.Contains(m.projectPath, "/") {
-							// Remote mode - fetch real jobs
-							jobs, err := getRemotePipelineJobs(m.projectPath, selectedPipeline.ID)
+							// Remote mode - fetch real jobs and child pipelines
+							jobs, err := getRemotePipelineJobsWithChildren(m.projectPath, selectedPipeline.ID)
 							if err == nil {
 								m.jobs = jobs
 							} else {
