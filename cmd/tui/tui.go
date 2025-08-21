@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os/exec"
@@ -313,46 +314,37 @@ func getRemoteJobLogs(projectPath string, jobID int) (string, error) {
 func parseJobsFromAPI(jsonResponse string) []core.Job {
 	var jobs []core.Job
 
-	// Simple parsing - look for job objects
-	lines := strings.Split(jsonResponse, "\n")
-	var currentJob core.Job
-	inJob := false
+	// Try to parse as JSON array first
+	var jsonJobs []map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonResponse), &jsonJobs); err != nil {
+		fmt.Printf("❌ Failed to parse JSON: %v\n", err)
+		fmt.Printf("📝 Raw response (first 200 chars): %s...\n", truncateString(jsonResponse, 200))
+		return jobs
+	}
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	// Convert JSON objects to Job structs
+	for _, jsonJob := range jsonJobs {
+		job := core.Job{}
 
-		if strings.Contains(line, `"id":`) && !strings.Contains(line, `"pipeline_id":`) {
-			if id := extractNumber(line, `"id":`); id != 0 {
-				currentJob.ID = id
-				inJob = true
-			}
+		if id, ok := jsonJob["id"].(float64); ok {
+			job.ID = int(id)
 		}
 
-		if strings.Contains(line, `"name":`) {
-			if name := extractString(line, `"name":`); name != "" {
-				currentJob.Name = name
-			}
+		if name, ok := jsonJob["name"].(string); ok {
+			job.Name = name
 		}
 
-		if strings.Contains(line, `"status":`) {
-			if status := extractString(line, `"status":`); status != "" {
-				currentJob.Status = status
-			}
+		if status, ok := jsonJob["status"].(string); ok {
+			job.Status = status
 		}
 
-		if strings.Contains(line, `"stage":`) {
-			if stage := extractString(line, `"stage":`); stage != "" {
-				currentJob.Stage = stage
-			}
+		if stage, ok := jsonJob["stage"].(string); ok {
+			job.Stage = stage
 		}
 
-		// End of job object
-		if strings.Contains(line, "}") && inJob {
-			if currentJob.ID != 0 && currentJob.Name != "" {
-				jobs = append(jobs, currentJob)
-			}
-			currentJob = core.Job{}
-			inJob = false
+		// Only add job if it has required fields
+		if job.ID != 0 && job.Name != "" {
+			jobs = append(jobs, job)
 		}
 	}
 
