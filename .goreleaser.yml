@@ -1,0 +1,123 @@
+# 🚀 GoReleaser configuration for glab-tui
+project_name: glab-tui
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: glab-tui
+    binary: glab-tui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: glab-tui
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - docs/**/*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
+
+dockers:
+  - image_templates:
+      - "ghcr.io/rkristelijn/glab-tui:{{ .Version }}"
+      - "ghcr.io/rkristelijn/glab-tui:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--platform=linux/amd64"
+
+brews:
+  - name: glab-tui
+    repository:
+      owner: rkristelijn
+      name: homebrew-tap
+    folder: Formula
+    homepage: "https://github.com/rkristelijn/glab-tui"
+    description: "A k9s-inspired TUI for GitLab CI/CD pipelines"
+    license: "MIT"
+    test: |
+      system "#{bin}/glab-tui version"
+    install: |
+      bin.install "glab-tui"
+
+release:
+  github:
+    owner: rkristelijn
+    name: glab-tui
+  draft: false
+  prerelease: auto
+  name_template: "🚀 glab-tui {{.Tag}}"
+  header: |
+    ## 🎉 What's New in glab-tui {{.Tag}}
+    
+    A k9s-inspired Terminal User Interface for GitLab CI/CD pipelines!
+    
+    ### 🚀 Quick Install:
+    ```bash
+    # Download and run
+    curl -L https://github.com/rkristelijn/glab-tui/releases/latest/download/glab-tui-linux-amd64 -o glab-tui
+    chmod +x glab-tui
+    ./glab-tui
+    ```
+    
+    ### 📦 Installation Options:
+    - **Binary releases** for Linux, macOS, and Windows
+    - **Docker image**: `ghcr.io/rkristelijn/glab-tui:latest`
+    - **Homebrew** (coming soon): `brew install rkristelijn/tap/glab-tui`
+  footer: |
+    ## 🤝 Thanks
+    
+    Special thanks to Pipeline Q for the incredible detective work and feedback! 🕵️
+    
+    **Full Changelog**: https://github.com/rkristelijn/glab-tui/compare/{{.PreviousTag}}...{{.Tag}}
