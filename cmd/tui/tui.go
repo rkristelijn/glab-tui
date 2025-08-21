@@ -814,7 +814,7 @@ func (m model) renderJobView(title string) string {
 	s += header + "\n"
 	s += lipgloss.NewStyle().Faint(true).Render(statusLine) + "\n\n"
 
-	// Enhanced job list
+	// Simple job list - back to basics
 	for i, job := range m.jobs {
 		cursor := "  "
 		if m.jobCursor == i {
@@ -824,25 +824,13 @@ func (m model) renderJobView(title string) string {
 		status := getStatusIcon(job.Status)
 		statusStyled := getStyledStatus(job.Status, status)
 
-		// Duration or status indicator
-		statusInfo := ""
-		if job.Status == "running" {
-			statusInfo = "🔄 running..."
-		} else if job.Status == "success" {
-			statusInfo = "✅ completed"
-		} else if job.Status == "failed" {
-			statusInfo = "❌ failed"
-		} else {
-			statusInfo = fmt.Sprintf("⏸️  %s", job.Status)
-		}
-
-		line := fmt.Sprintf("%s%s %-30s %-12s %-15s %s",
+		// Simple line format
+		line := fmt.Sprintf("%s%s %-25s %-12s %s",
 			cursor,
 			statusStyled,
-			truncateString(job.Name, 30),
+			truncateString(job.Name, 25),
 			job.Status,
-			job.Stage,
-			statusInfo)
+			job.Stage)
 
 		if m.jobCursor == i {
 			line = selectedStyle.Render(line)
@@ -856,24 +844,26 @@ func (m model) renderJobView(title string) string {
 }
 
 func (m model) renderLogView(title string) string {
-	header := headerStyle.Render(fmt.Sprintf("Logs (Job #%d)", m.selectedJobID))
+	header := headerStyle.Render(fmt.Sprintf("📋 Logs (Job #%d)", m.selectedJobID))
 
 	s := title + "\n"
 	s += header + "\n\n"
 
-	// Show logs (truncated for display)
+	// Show logs (simple display)
 	logLines := strings.Split(m.logs, "\n")
-	maxLines := 20 // Show last 20 lines
+	maxLines := 15 // Show last 15 lines to prevent overflow
 	startLine := 0
 	if len(logLines) > maxLines {
 		startLine = len(logLines) - maxLines
 	}
 
 	for i := startLine; i < len(logLines) && i < startLine+maxLines; i++ {
-		s += logLines[i] + "\n"
+		if logLines[i] != "" {
+			s += logLines[i] + "\n"
+		}
 	}
 
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Esc: back to jobs")
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: Esc: back to jobs | q: quit")
 	return s
 }
 
