@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+          - goos: windows
+            goarch: amd64
+            suffix: windows-amd64
+            extension: .exe
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 0
+      run: |
+        go build -ldflags="-w -s -X main.version=${GITHUB_REF#refs/tags/}" \
+          -o glab-tui-${{ matrix.suffix }}${{ matrix.extension }} .
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: glab-tui-${{ matrix.suffix }}
+        path: glab-tui-${{ matrix.suffix }}${{ matrix.extension }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          glab-tui-linux-amd64/glab-tui-linux-amd64
+          glab-tui-darwin-amd64/glab-tui-darwin-amd64
+          glab-tui-darwin-arm64/glab-tui-darwin-arm64
+          glab-tui-windows-amd64/glab-tui-windows-amd64.exe
+        generate_release_notes: true
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
