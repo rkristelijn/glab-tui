@@ -34,7 +34,7 @@ glab-tui                    # See everything at once! 🎉
 ## ✨ Features
 
 - **🔄 Real-time monitoring** - Live pipeline status updates
-- **🔥 Real-time log streaming** - Stream job logs as they happen with `--follow`
+- **🔥 Real-time log streaming** - Stream job logs as they happen with `--follow` ✅ **CONFIRMED WORKING**
 - **🎨 Beautiful interface** - Color-coded status indicators and visual formatting
 - **📊 Visual overview** - Multiple pipelines at a glance in one screen
 - **⌨️ Keyboard driven** - Vim-style navigation (hjkl) for quick browsing
