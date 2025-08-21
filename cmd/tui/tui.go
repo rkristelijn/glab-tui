@@ -164,8 +164,8 @@ func StartWithRemoteProject(projectPath string) error {
 func getRemoteProjectPipelines(projectPath string) ([]core.Pipeline, error) {
 	fmt.Printf("📡 Fetching real pipelines for %s...\n", projectPath)
 
-	// Use glab pipeline list with remote project
-	cmd := exec.Command("glab", "pipeline", "list", "--repo", projectPath, "--limit", "20")
+	// Use glab ci list with remote project (correct command)
+	cmd := exec.Command("glab", "ci", "list", "--repo", projectPath)
 	output, err := cmd.Output()
 	if err != nil {
 		fmt.Printf("❌ Failed to get pipelines: %v\n", err)
@@ -174,8 +174,10 @@ func getRemoteProjectPipelines(projectPath string) ([]core.Pipeline, error) {
 		return core.GetMockPipelines(), nil
 	}
 
-	// Parse glab pipeline list output
-	pipelines := parseGlabPipelineOutput(string(output))
+	fmt.Printf("📝 Pipeline data received:\n%s\n", string(output))
+
+	// Parse glab ci list output
+	pipelines := parseGlabCIListOutput(string(output))
 	if len(pipelines) == 0 {
 		fmt.Println("📝 No pipelines found, using mock data for demonstration")
 		return core.GetMockPipelines(), nil
@@ -185,39 +187,61 @@ func getRemoteProjectPipelines(projectPath string) ([]core.Pipeline, error) {
 	return pipelines, nil
 }
 
-// parseGlabPipelineOutput parses the output from 'glab pipeline list'
-func parseGlabPipelineOutput(output string) []core.Pipeline {
+// parseGlabCIListOutput parses the output from 'glab ci list'
+func parseGlabCIListOutput(output string) []core.Pipeline {
 	var pipelines []core.Pipeline
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "ID") || strings.HasPrefix(line, "--") {
+		if line == "" || strings.HasPrefix(line, "Showing") || strings.HasPrefix(line, "State") || strings.HasPrefix(line, "---") {
 			continue
 		}
 
-		// Parse line format: ID STATUS REF CREATED
-		fields := strings.Fields(line)
-		if len(fields) >= 3 {
-			// Extract ID
-			idStr := fields[0]
-			if id, err := strconv.Atoi(idStr); err == nil {
-				pipeline := core.Pipeline{
-					ID:          id,
-					Status:      fields[1],
-					Ref:         fields[2],
-					ProjectName: "remote-project",
-					Jobs:        "loading...",
-					Duration:    "unknown",
-				}
-
-				// Add more fields if available
-				if len(fields) >= 4 {
-					pipeline.Duration = fields[3]
-				}
-
-				pipelines = append(pipelines, pipeline)
+		// Parse line format: (status) • #ID (#IID) ref (time ago)
+		if strings.Contains(line, "•") && strings.Contains(line, "#") {
+			// Extract status
+			statusStart := strings.Index(line, "(")
+			statusEnd := strings.Index(line, ")")
+			if statusStart == -1 || statusEnd == -1 {
+				continue
 			}
+			status := line[statusStart+1 : statusEnd]
+
+			// Extract pipeline ID
+			idStart := strings.Index(line, "#")
+			if idStart == -1 {
+				continue
+			}
+			idPart := line[idStart+1:]
+			idEnd := strings.Index(idPart, "\t")
+			if idEnd == -1 {
+				continue
+			}
+			idStr := idPart[:idEnd]
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				continue
+			}
+
+			// Extract ref (branch/tag)
+			parts := strings.Split(line, "\t")
+			if len(parts) < 3 {
+				continue
+			}
+			ref := strings.TrimSpace(parts[2])
+
+			// Create pipeline
+			pipeline := core.Pipeline{
+				ID:          id,
+				Status:      status,
+				Ref:         ref,
+				ProjectName: "remote-project",
+				Jobs:        "loading...",
+				Duration:    "unknown",
+			}
+
+			pipelines = append(pipelines, pipeline)
 		}
 	}
 
@@ -232,11 +256,35 @@ func getRemotePipelineJobs(projectPath string, pipelineID int) ([]core.Job, erro
 	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/pipelines/%d/jobs", url.QueryEscape(projectPath), pipelineID))
 	output, err := cmd.Output()
 	if err != nil {
+		fmt.Printf("❌ API call failed: %v\n", err)
 		return nil, fmt.Errorf("failed to get jobs: %w", err)
+	}
+
+	fmt.Printf("📝 API Response: %s\n", string(output))
+
+	// Check if response is empty array
+	responseStr := strings.TrimSpace(string(output))
+	if responseStr == "[]" || responseStr == "" {
+		fmt.Printf("⚠️  No jobs found for pipeline %d\n", pipelineID)
+		fmt.Println("💡 This could mean:")
+		fmt.Println("   • Pipeline is still starting")
+		fmt.Println("   • Pipeline has no jobs defined")
+		fmt.Println("   • You don't have access to view pipeline details")
+		fmt.Println("   • Pipeline ID doesn't exist")
+		fmt.Println("")
+		fmt.Println("🎯 Showing mock jobs to demonstrate the interface:")
+		fmt.Println("   In a project where you have access, you'd see real jobs here.")
+		return core.GetMockJobs(), nil
 	}
 
 	// Parse jobs from API response
 	jobs := parseJobsFromAPI(string(output))
+	if len(jobs) == 0 {
+		fmt.Println("📝 Could not parse jobs from API response, using mock data")
+		return core.GetMockJobs(), nil
+	}
+
+	fmt.Printf("✅ Found %d jobs\n", len(jobs))
 	return jobs, nil
 }
 
@@ -347,9 +395,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			// Refresh pipelines
 			if m.currentView == pipelineView {
-				pipelines, err := getProjectPipelinesViaGlab(m.projectPath)
-				if err == nil {
-					m.pipelines = pipelines
+				// Check if this is remote mode
+				if strings.Contains(m.projectPath, "/") && m.gitlab == nil {
+					// Remote mode - refresh from GitLab
+					pipelines, err := getRemoteProjectPipelines(m.projectPath)
+					if err == nil {
+						m.pipelines = pipelines
+					}
+				} else if m.gitlab == nil {
+					// Demo mode - refresh mock data
+					m.pipelines = core.GetMockPipelines()
+				} else {
+					// Local GitLab mode
+					pipelines, err := getProjectPipelinesViaGlab(m.projectPath)
+					if err == nil {
+						m.pipelines = pipelines
+					}
 				}
 			}
 		case "enter":
