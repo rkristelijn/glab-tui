@@ -57,21 +57,21 @@ const (
 type model struct {
 	// View state
 	currentView viewMode
-	
+
 	// Pipeline view
-	pipelines []core.Pipeline
-	pipelineCursor int
+	pipelines        []core.Pipeline
+	pipelineCursor   int
 	pipelineSelected map[int]struct{}
-	
+
 	// Job view
-	jobs []core.Job
-	jobCursor int
+	jobs               []core.Job
+	jobCursor          int
 	selectedPipelineID int
-	
+
 	// Log view
-	logs string
+	logs          string
 	selectedJobID int
-	
+
 	// GitLab wrapper
 	gitlab *gitlab.GlabWrapper
 }
@@ -79,15 +79,15 @@ type model struct {
 func initialModel() model {
 	// Create GitLab wrapper
 	wrapper := gitlab.NewGlabWrapper("group/project/frontend-apps")
-	
+
 	// Try to get real data using glab
 	pipelines, err := wrapper.GetProjectPipelines(12345678) // Replace with your project ID
-	
+
 	if err != nil || len(pipelines) == 0 {
 		// Fall back to mock data
 		pipelines = core.GetMockPipelines()
 	}
-	
+
 	return model{
 		currentView:      pipelineView,
 		pipelines:        pipelines,
@@ -182,7 +182,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	// Title bar
 	title := titleStyle.Render("🚀 GitLab TUI - glab-tui")
-	
+
 	switch m.currentView {
 	case pipelineView:
 		return m.renderPipelineView(title)
@@ -197,7 +197,7 @@ func (m model) View() string {
 
 func (m model) renderPipelineView(title string) string {
 	header := headerStyle.Render("Pipelines")
-	
+
 	s := title + "\n"
 	s += header + "                                                     ↻ Auto-refresh\n\n"
 
@@ -215,14 +215,14 @@ func (m model) renderPipelineView(title string) string {
 
 		status := getStatusIcon(pipeline.Status)
 		statusStyled := getStyledStatus(pipeline.Status, status)
-		
-		line := fmt.Sprintf("%s[%s] %s #%d  %-10s %-15s %-20s %s", 
+
+		line := fmt.Sprintf("%s[%s] %s #%d  %-10s %-15s %-20s %s",
 			cursor, checked, statusStyled, pipeline.ID, pipeline.Status, pipeline.ProjectName, pipeline.Ref, pipeline.Jobs)
-		
+
 		if m.pipelineCursor == i {
 			line = selectedStyle.Render(line)
 		}
-		
+
 		s += line + "\n"
 	}
 
@@ -232,7 +232,7 @@ func (m model) renderPipelineView(title string) string {
 
 func (m model) renderJobView(title string) string {
 	header := headerStyle.Render(fmt.Sprintf("Jobs (Pipeline #%d)", m.selectedPipelineID))
-	
+
 	s := title + "\n"
 	s += header + "\n\n"
 
@@ -245,14 +245,14 @@ func (m model) renderJobView(title string) string {
 
 		status := getStatusIcon(job.Status)
 		statusStyled := getStyledStatus(job.Status, status)
-		
-		line := fmt.Sprintf("%s%s %-25s %-10s %-15s", 
+
+		line := fmt.Sprintf("%s%s %-25s %-10s %-15s",
 			cursor, statusStyled, job.Name, job.Status, job.Stage)
-		
+
 		if m.jobCursor == i {
 			line = selectedStyle.Render(line)
 		}
-		
+
 		s += line + "\n"
 	}
 
@@ -262,7 +262,7 @@ func (m model) renderJobView(title string) string {
 
 func (m model) renderLogView(title string) string {
 	header := headerStyle.Render(fmt.Sprintf("Logs (Job #%d)", m.selectedJobID))
-	
+
 	s := title + "\n"
 	s += header + "\n\n"
 

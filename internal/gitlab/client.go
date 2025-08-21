@@ -3,9 +3,9 @@ package gitlab
 import (
 	"fmt"
 
-	"github.com/xanzy/go-gitlab"
 	"github.com/rkristelijn/glab-tui/internal/config"
 	"github.com/rkristelijn/glab-tui/internal/core"
+	"github.com/xanzy/go-gitlab"
 )
 
 type Client struct {

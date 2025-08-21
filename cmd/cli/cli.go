@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strconv"
 
-	"github.com/rkristelijn/glab-tui/internal/core"
 	"github.com/rkristelijn/glab-tui/internal/config"
+	"github.com/rkristelijn/glab-tui/internal/core"
 	"github.com/rkristelijn/glab-tui/internal/gitlab"
 )
 
@@ -18,7 +18,7 @@ func Run(args []string) {
 	}
 
 	command := args[0]
-	
+
 	switch command {
 	case "pipelines", "p":
 		listPipelines()
@@ -49,14 +49,14 @@ func Run(args []string) {
 
 func listPipelines() {
 	pipelines := core.GetMockPipelines()
-	
+
 	fmt.Println("GitLab Pipelines (Multi-Project):")
 	fmt.Println("ID          Status    Project         Ref                   Jobs")
 	fmt.Println("─────────────────────────────────────────────────────────────────────")
-	
+
 	for _, p := range pipelines {
 		status := getStatusIcon(p.Status)
-		fmt.Printf("%-10d  %s %-8s %-15s %-20s %s\n", 
+		fmt.Printf("%-10d  %s %-8s %-15s %-20s %s\n",
 			p.ID, status, p.Status, p.ProjectName, p.Ref, p.Jobs)
 	}
 }
@@ -82,7 +82,7 @@ func checkJob(jobIDStr string) {
 	}
 
 	fmt.Printf("Checking job %d in group/project/frontend-apps...\n", jobID)
-	
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Printf("Failed to load config: %v\n", err)
@@ -120,7 +120,7 @@ func showJobLogs(jobIDStr string) {
 	}
 
 	fmt.Printf("Fetching logs for job %d...\n", jobID)
-	
+
 	wrapper := gitlab.NewGlabWrapper("group/project/frontend-apps")
 	logs, err := wrapper.GetJobLogs(jobID)
 	if err != nil {
@@ -135,7 +135,7 @@ func showJobLogs(jobIDStr string) {
 
 func testRealGitLab() {
 	fmt.Println("Testing real GitLab connection using glab...")
-	
+
 	// Test glab command directly
 	cmd := exec.Command("glab", "pipeline", "list", "-R", "group/project/frontend-apps")
 	output, err := cmd.Output()
@@ -147,7 +147,7 @@ func testRealGitLab() {
 	fmt.Println("✅ glab command successful!")
 	fmt.Println("📋 Raw pipeline data:")
 	fmt.Println(string(output))
-	
+
 	// Parse the output
 	pipelines, err := gitlab.ParseGlabPipelineList(string(output))
 	if err != nil {

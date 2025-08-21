@@ -3,8 +3,8 @@ package core
 import (
 	"fmt"
 
-	"github.com/xanzy/go-gitlab"
 	"github.com/rkristelijn/glab-tui/internal/config"
+	"github.com/xanzy/go-gitlab"
 )
 
 type Service struct {

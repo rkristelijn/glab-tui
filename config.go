@@ -17,8 +17,8 @@ type GitLabConfig struct {
 
 type UIConfig struct {
 	RefreshInterval string `yaml:"refresh_interval"`
-	Theme          string `yaml:"theme"`
-	VimMode        bool   `yaml:"vim_mode"`
+	Theme           string `yaml:"theme"`
+	VimMode         bool   `yaml:"vim_mode"`
 }
 
 func getConfigPath() string {
@@ -34,8 +34,8 @@ func getDefaultConfig() Config {
 		},
 		UI: UIConfig{
 			RefreshInterval: "5s",
-			Theme:          "dark",
-			VimMode:        true,
+			Theme:           "dark",
+			VimMode:         true,
 		},
 	}
 }

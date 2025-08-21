@@ -13,15 +13,15 @@ type Config struct {
 }
 
 type GitLabConfig struct {
-	URL            string
-	Token          string
-	ProjectID      int    // Single project ID for testing
-	GroupID        int
-	GroupPath      string
-	ProjectIDs     []int
-	ProjectPattern string
-	MaxProjects    int
-	ShowArchived   bool
+	URL             string
+	Token           string
+	ProjectID       int // Single project ID for testing
+	GroupID         int
+	GroupPath       string
+	ProjectIDs      []int
+	ProjectPattern  string
+	MaxProjects     int
+	ShowArchived    bool
 	MinActivityDays int
 }
 
@@ -91,14 +91,14 @@ func loadEnvFile() {
 	// Simple .env file loader
 	if file, err := os.Open(".env"); err == nil {
 		defer file.Close()
-		
+
 		// Read line by line and set environment variables
 		// This is a basic implementation - you could use a library like godotenv
 		buf := make([]byte, 1024)
 		if n, err := file.Read(buf); err == nil {
 			content := string(buf[:n])
 			lines := splitLines(content)
-			
+
 			for _, line := range lines {
 				if len(line) > 0 && line[0] != '#' {
 					if parts := splitKeyValue(line); len(parts) == 2 {
@@ -113,7 +113,7 @@ func loadEnvFile() {
 func splitLines(s string) []string {
 	var lines []string
 	start := 0
-	
+
 	for i, c := range s {
 		if c == '\n' {
 			if start < i {
@@ -122,11 +122,11 @@ func splitLines(s string) []string {
 			start = i + 1
 		}
 	}
-	
+
 	if start < len(s) {
 		lines = append(lines, s[start:])
 	}
-	
+
 	return lines
 }
 
