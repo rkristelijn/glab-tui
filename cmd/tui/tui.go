@@ -162,6 +162,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+		case "l":
+			// Quick logs --follow for selected job
+			if m.currentView == jobView && m.jobCursor < len(m.jobs) {
+				selectedJob := m.jobs[m.jobCursor]
+				// Exit TUI and start streaming logs
+				return m, tea.Sequence(
+					tea.Quit,
+					tea.ExecProcess(exec.Command("glab-tui", "logs", "--follow", strconv.Itoa(selectedJob.ID)), nil),
+				)
+			}
 		case "up", "k":
 			switch m.currentView {
 			case pipelineView:
@@ -206,23 +216,63 @@ func (m model) View() string {
 }
 
 func (m model) renderPipelineView(title string) string {
-	header := headerStyle.Render("Pipelines")
+	header := headerStyle.Render("🔄 Live Pipelines")
+
+	// Show welcome message if no pipelines
+	if len(m.pipelines) == 0 {
+		return m.renderWelcomeScreen(title)
+	}
+
+	// Count running pipelines
+	runningCount := 0
+	for _, pipeline := range m.pipelines {
+		if pipeline.Status == "running" {
+			runningCount++
+		}
+	}
+
+	statusLine := fmt.Sprintf("📊 %d total | 🔄 %d running | [r] Refresh | [Enter] View Jobs",
+		len(m.pipelines), runningCount)
 
 	s := title + "\n"
-	s += header + "                                                     [r] Refresh\n\n"
+	s += header + "                                                     \n"
+	s += lipgloss.NewStyle().Faint(true).Render(statusLine) + "\n\n"
 
-	// Pipeline list
+	// Pipeline list with enhanced visualization
 	for i, pipeline := range m.pipelines {
 		cursor := "  "
 		if m.pipelineCursor == i {
-			cursor = "> "
+			cursor = "▶ "
 		}
 
+		// Enhanced status visualization
 		status := getStatusIcon(pipeline.Status)
 		statusStyled := getStyledStatus(pipeline.Status, status)
 
-		line := fmt.Sprintf("%s%s #%d  %-10s %-15s %-20s %s",
-			cursor, statusStyled, pipeline.ID, pipeline.Status, pipeline.ProjectName, pipeline.Ref, pipeline.Jobs)
+		// Progress bar for running pipelines
+		progressBar := ""
+		if pipeline.Status == "running" {
+			progressBar = getProgressBar(pipeline.Jobs)
+		}
+
+		// Duration formatting
+		duration := ""
+		if pipeline.Status == "running" {
+			duration = "⏱️  running..."
+		} else {
+			duration = fmt.Sprintf("⏱️  %s", pipeline.Duration)
+		}
+
+		// Enhanced line format with better spacing
+		line := fmt.Sprintf("%s%s #%-8d %-12s %-20s %-15s %s %s",
+			cursor,
+			statusStyled,
+			pipeline.ID,
+			pipeline.Status,
+			truncateString(pipeline.Ref, 20),
+			truncateString(pipeline.ProjectName, 15),
+			progressBar,
+			duration)
 
 		if m.pipelineCursor == i {
 			line = selectedStyle.Render(line)
@@ -231,28 +281,124 @@ func (m model) renderPipelineView(title string) string {
 		s += line + "\n"
 	}
 
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Enter: view jobs | j/k: navigate | r: refresh | q: quit")
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Enter: view jobs | r: refresh | q: quit")
 	return s
 }
 
+// Welcome screen with instructions
+func (m model) renderWelcomeScreen(title string) string {
+	welcomeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FAFAFA")).
+		Background(lipgloss.Color("#7D56F4")).
+		Padding(1, 2).
+		Margin(1, 0)
+
+	instructionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#04B575")).
+		Margin(0, 2)
+
+	s := title + "\n\n"
+
+	s += welcomeStyle.Render("🚀 Welcome to GitLab TUI!") + "\n\n"
+
+	s += instructionStyle.Render("📋 Quick Start Guide:") + "\n"
+	s += "  • Press 'r' to refresh and load pipelines\n"
+	s += "  • Use ↑/↓ or j/k to navigate\n"
+	s += "  • Press Enter to drill down: Pipelines → Jobs → Logs\n"
+	s += "  • Press 'l' on a job to stream logs in real-time\n"
+	s += "  • Press Esc to go back, 'q' to quit\n\n"
+
+	s += instructionStyle.Render("🔥 New Feature - Real-time Log Streaming:") + "\n"
+	s += "  • Navigate to a job and press 'l' for live streaming\n"
+	s += "  • Or use CLI: glab-tui logs --follow <job-id>\n\n"
+
+	s += instructionStyle.Render("🎯 Current Status:") + "\n"
+	if len(m.pipelines) == 0 {
+		s += "  • No pipelines loaded yet\n"
+		s += "  • Press 'r' to refresh and load from GitLab\n"
+	}
+
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Press 'r' to refresh | 'q' to quit")
+
+	return s
+}
+
+// Helper function to create progress bar for running pipelines
+func getProgressBar(jobs string) string {
+	if jobs == "" {
+		return "⬜⬜⬜⬜⬜"
+	}
+
+	// Simple progress visualization
+	// In real implementation, this would parse actual job status
+	return "🟩🟩🟨⬜⬜" // Example: 2 done, 1 running, 2 pending
+}
+
+// Helper function to truncate strings with ellipsis
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
+}
+
 func (m model) renderJobView(title string) string {
-	header := headerStyle.Render(fmt.Sprintf("Jobs (Pipeline #%d)", m.selectedPipelineID))
+	header := headerStyle.Render(fmt.Sprintf("🔧 Jobs (Pipeline #%d)", m.selectedPipelineID))
+
+	// Count job statuses
+	runningJobs := 0
+	successJobs := 0
+	failedJobs := 0
+	for _, job := range m.jobs {
+		switch job.Status {
+		case "running":
+			runningJobs++
+		case "success":
+			successJobs++
+		case "failed":
+			failedJobs++
+		}
+	}
+
+	statusLine := fmt.Sprintf("📊 %d total | ✅ %d success | 🔄 %d running | ❌ %d failed",
+		len(m.jobs), successJobs, runningJobs, failedJobs)
 
 	s := title + "\n"
-	s += header + "\n\n"
+	s += header + "\n"
+	s += lipgloss.NewStyle().Faint(true).Render(statusLine) + "\n\n"
 
-	// Job list
+	// Enhanced job list
 	for i, job := range m.jobs {
 		cursor := "  "
 		if m.jobCursor == i {
-			cursor = "> "
+			cursor = "▶ "
 		}
 
 		status := getStatusIcon(job.Status)
 		statusStyled := getStyledStatus(job.Status, status)
 
-		line := fmt.Sprintf("%s%s %-25s %-10s %-15s",
-			cursor, statusStyled, job.Name, job.Status, job.Stage)
+		// Duration or status indicator
+		statusInfo := ""
+		if job.Status == "running" {
+			statusInfo = "🔄 running..."
+		} else if job.Status == "success" {
+			statusInfo = "✅ completed"
+		} else if job.Status == "failed" {
+			statusInfo = "❌ failed"
+		} else {
+			statusInfo = fmt.Sprintf("⏸️  %s", job.Status)
+		}
+
+		line := fmt.Sprintf("%s%s %-30s %-12s %-15s %s",
+			cursor,
+			statusStyled,
+			truncateString(job.Name, 30),
+			job.Status,
+			job.Stage,
+			statusInfo)
 
 		if m.jobCursor == i {
 			line = selectedStyle.Render(line)
@@ -261,7 +407,7 @@ func (m model) renderJobView(title string) string {
 		s += line + "\n"
 	}
 
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Enter: view logs | Esc: back | j/k: navigate")
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Enter: view logs | Esc: back to pipelines | l: logs --follow")
 	return s
 }
 

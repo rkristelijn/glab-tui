@@ -49,6 +49,16 @@ glab-tui                    # See everything at once! 🎉
 ./glab-tui                  # Start the beautiful TUI
 ```
 
+**🎯 TUI Quick Start:**
+- **First time?** Press `r` to refresh and load pipelines
+- **Navigate:** Use ↑/↓ arrows or `j`/`k` (vim-style)
+- **Drill down:** Press `Enter` to go: Pipelines → Jobs → Logs
+- **Real-time logs:** Press `l` on any job for live streaming
+- **Go back:** Press `Esc` to return to previous view
+- **Quit:** Press `q` or `Ctrl+C`
+
+**🔥 Pro tip:** Navigate to a running job and press `l` for real-time log streaming!
+
 ### **CLI Commands**
 ```bash
 ./glab-tui pipelines        # List pipelines

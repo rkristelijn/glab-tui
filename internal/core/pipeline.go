@@ -18,6 +18,7 @@ type Pipeline struct {
 	ProjectID   int    `json:"project_id"`
 	ProjectName string `json:"-"` // Computed field
 	Jobs        string `json:"-"` // Computed field
+	Duration    string `json:"-"` // Computed field for display
 }
 
 // Project represents a GitLab project
@@ -38,13 +39,13 @@ type PipelineService struct {
 // GetMockPipelines returns mock data for development (multi-project)
 func GetMockPipelines() []Pipeline {
 	return []Pipeline{
-		{ID: 1996879423, Status: "running", Ref: "feat/zap-c3", ProjectID: 123, ProjectName: "frontend-app", Jobs: "3/8 jobs"},
-		{ID: 1996867272, Status: "running", Ref: "refs/merge-req/406", ProjectID: 456, ProjectName: "backend-api", Jobs: "5/8 jobs"},
-		{ID: 1996733511, Status: "success", Ref: "fix/supplier-bug", ProjectID: 123, ProjectName: "frontend-app", Jobs: "8/8 jobs"},
-		{ID: 1996723026, Status: "failed", Ref: "fix/supplier-bug", ProjectID: 789, ProjectName: "data-pipeline", Jobs: "failed"},
-		{ID: 1996719037, Status: "success", Ref: "main", ProjectID: 456, ProjectName: "backend-api", Jobs: "8/8 jobs"},
-		{ID: 1996719038, Status: "running", Ref: "feature/auth", ProjectID: 101, ProjectName: "auth-service", Jobs: "2/5 jobs"},
-		{ID: 1996719039, Status: "success", Ref: "main", ProjectID: 789, ProjectName: "data-pipeline", Jobs: "12/12 jobs"},
+		{ID: 1996879423, Status: "running", Ref: "feat/zap-c3", ProjectID: 123, ProjectName: "frontend-app", Jobs: "3/8 jobs", Duration: "4m 32s"},
+		{ID: 1996867272, Status: "running", Ref: "refs/merge-req/406", ProjectID: 456, ProjectName: "backend-api", Jobs: "5/8 jobs", Duration: "2m 15s"},
+		{ID: 1996733511, Status: "success", Ref: "fix/supplier-bug", ProjectID: 123, ProjectName: "frontend-app", Jobs: "8/8 jobs", Duration: "6m 45s"},
+		{ID: 1996723026, Status: "failed", Ref: "fix/supplier-bug", ProjectID: 789, ProjectName: "data-pipeline", Jobs: "failed", Duration: "3m 12s"},
+		{ID: 1996719037, Status: "success", Ref: "main", ProjectID: 456, ProjectName: "backend-api", Jobs: "8/8 jobs", Duration: "5m 23s"},
+		{ID: 1996719038, Status: "running", Ref: "feature/auth", ProjectID: 101, ProjectName: "auth-service", Jobs: "2/5 jobs", Duration: "1m 45s"},
+		{ID: 1996719039, Status: "success", Ref: "main", ProjectID: 789, ProjectName: "data-pipeline", Jobs: "12/12 jobs", Duration: "8m 15s"},
 	}
 }
 
