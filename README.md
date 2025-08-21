@@ -1,8 +1,8 @@
 # glab-tui 🚀
 
-A fast, beautiful Terminal User Interface (TUI) for GitLab CI/CD pipelines.
+A beautiful, interactive Terminal User Interface (TUI) for GitLab CI/CD pipelines.
 
-**Stop typing repetitive `glab` commands - see everything at once!** ✨
+**Stop typing repetitive `glab` commands - see everything at once in a visual dashboard!** ✨
 
 ## ⚡ Quick Start
 
@@ -34,12 +34,12 @@ glab-tui                    # See everything at once! 🎉
 ## ✨ Features
 
 - **🔄 Real-time monitoring** - Live pipeline status updates
-- **⚡ Lightning fast** - 2.5x faster than CLI commands
-- **🎨 Beautiful interface** - Color-coded status indicators
-- **⌨️ Keyboard driven** - Vim-style navigation (hjkl)
-- **📊 Visual overview** - Multiple pipelines at a glance
-- **🔍 Drill-down details** - Pipeline → Jobs → Logs
-- **🚀 Zero config** - Auto-detects your GitLab project
+- **🎨 Beautiful interface** - Color-coded status indicators and visual formatting
+- **📊 Visual overview** - Multiple pipelines at a glance in one screen
+- **⌨️ Keyboard driven** - Vim-style navigation (hjkl) for quick browsing
+- **🎯 Interactive dashboard** - Navigate through pipelines, jobs, and details
+- **🔍 Better UX** - No more repetitive CLI commands for status checks
+- **🚀 Easy setup** - Uses your existing glab authentication
 
 ## 🎮 Usage
 
@@ -90,14 +90,16 @@ go install github.com/rkristelijn/glab-tui@latest
 - **Authentication** - Run `glab auth login` first
 - **Git repository** - Run from inside a GitLab project
 
-## 📊 Performance
+## 📊 User Experience
 
-| Tool | Speed | Visual | Multi-pipeline |
-|------|-------|--------|----------------|
-| `glab` CLI | 0.5s | ❌ | ❌ |
-| `glab-tui` | 0.2s | ✅ | ✅ |
+| Feature | glab CLI | glab-tui |
+|---------|----------|----------|
+| **Visual Overview** | ❌ Plain text | ✅ Color-coded dashboard |
+| **Multi-pipeline View** | ❌ One at a time | ✅ All at once |
+| **Navigation** | ❌ Type commands | ✅ Keyboard shortcuts |
+| **Real-time Updates** | ❌ Manual refresh | ✅ Live monitoring |
 
-**Result: 2.5x faster + better UX** 🏆
+**Result: Better workflow + visual experience** 🏆
 
 ## 🎨 Interface Preview
 
@@ -122,10 +124,10 @@ go install github.com/rkristelijn/glab-tui@latest
 > *"Finally, a GitLab interface that doesn't make me want to cry."*  
 > — **Frontend Developer**
 
-> *"I used to spend 10 minutes checking pipelines. Now it takes 10 seconds."*  
+> *"Much better overview than running glab commands repeatedly."*  
 > — **DevOps Engineer**
 
-> *"It's like k9s but for GitLab. Can't go back to plain commands."*  
+> *"It's like k9s but for GitLab. Love the visual dashboard."*  
 > — **Platform Engineer**
 
 ## 🤝 Contributing

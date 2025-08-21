@@ -334,8 +334,9 @@ func checkJob(jobIDStr string) {
 
 	fmt.Printf("📊 Project: %s\n", projectPath)
 
-	// Use glab command to get job details
-	cmd := exec.Command("glab", "api", fmt.Sprintf("jobs/%d", jobID))
+	// Use glab command to get job details with project context
+	// First try the project-specific endpoint
+	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/jobs/%d", strings.ReplaceAll(projectPath, "/", "%2F"), jobID))
 	output, err := cmd.Output()
 	if err != nil {
 		// Check if it's a 404 (job not found) vs auth issue
