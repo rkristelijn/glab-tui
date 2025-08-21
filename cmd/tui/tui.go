@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,7 +58,15 @@ func Run() error {
 	fmt.Println("🚀 ENHANCED GITLAB TUI - DOMINATION MODE!")
 	fmt.Println("⚡ Connecting to GitLab API...")
 
-	model, err := NewEnhancedTUI("theapsgroup/agility/frontend-apps")
+	// Auto-detect current project
+	projectPath, err := getCurrentProjectPath()
+	if err != nil {
+		fmt.Printf("❌ Could not detect GitLab project: %v\n", err)
+		fmt.Println("💡 Make sure you're in a GitLab repository and authenticated with 'glab auth login'")
+		return err
+	}
+
+	model, err := NewEnhancedTUI(projectPath)
 	if err != nil {
 		fmt.Printf("❌ Failed to initialize enhanced TUI: %v\n", err)
 		fmt.Println("💡 Make sure you're authenticated with 'glab auth login'")
@@ -99,13 +109,25 @@ type model struct {
 }
 
 func initialModel() model {
-	// Create GitLab wrapper
-	wrapper := gitlab.NewGlabWrapper("theapsgroup/agility/frontend-apps")
+	// Try to get current project from git context
+	projectPath, err := getCurrentProjectPath()
+	if err != nil {
+		// Fall back to mock data
+		return model{
+			currentView:      pipelineView,
+			pipelines:        core.GetMockPipelines(),
+			pipelineCursor:   0,
+			pipelineSelected: make(map[int]struct{}),
+			gitlab:           gitlab.NewGlabWrapper("mock-project"),
+		}
+	}
 
-	// Try to get real data using glab
-	pipelines, err := wrapper.GetProjectPipelines(12345678) // Replace with your project ID
+	// Create GitLab wrapper with detected project
+	wrapper := gitlab.NewGlabWrapper(projectPath)
 
-	if err != nil || len(pipelines) == 0 {
+	// Try to get real data using the same approach as CLI
+	pipelines, err := getProjectPipelinesViaGlab(projectPath)
+	if err != nil {
 		// Fall back to mock data
 		pipelines = core.GetMockPipelines()
 	}
@@ -116,6 +138,156 @@ func initialModel() model {
 		pipelineCursor:   0,
 		pipelineSelected: make(map[int]struct{}),
 		gitlab:           wrapper,
+	}
+}
+
+// Add the same helper functions from CLI
+func getCurrentProjectPath() (string, error) {
+	// Get the remote URL
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git remote: %w", err)
+	}
+
+	remoteURL := strings.TrimSpace(string(output))
+
+	// Parse GitLab project path from URL
+	if strings.Contains(remoteURL, "gitlab") {
+		// Extract project path from GitLab URL
+		if strings.HasPrefix(remoteURL, "git@") {
+			// SSH format: git@gitlab.com:group/project.git
+			parts := strings.Split(remoteURL, ":")
+			if len(parts) >= 2 {
+				return strings.TrimSuffix(parts[1], ".git"), nil
+			}
+		} else if strings.HasPrefix(remoteURL, "https://") {
+			// HTTPS format: https://gitlab.com/group/project.git
+			parts := strings.Split(remoteURL, "/")
+			if len(parts) >= 4 {
+				projectPath := strings.Join(parts[3:], "/")
+				return strings.TrimSuffix(projectPath, ".git"), nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("not a GitLab repository or unsupported URL format: %s", remoteURL)
+}
+
+func getProjectPipelinesViaGlab(projectPath string) ([]core.Pipeline, error) {
+	// Use glab command to get pipeline data
+	cmd := exec.Command("glab", "pipeline", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("glab command failed: %w", err)
+	}
+
+	// Parse the text output
+	pipelines, err := parseGlabPipelineText(string(output))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse glab output: %w", err)
+	}
+
+	return pipelines, nil
+}
+
+func parseGlabPipelineText(output string) ([]core.Pipeline, error) {
+	lines := strings.Split(output, "\n")
+	var pipelines []core.Pipeline
+
+	// Extract project name from header line like "Showing 30 pipelines on group/project"
+	projectName := "current-project"
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Showing") && strings.Contains(line, " on ") {
+			parts := strings.Split(line, " on ")
+			if len(parts) > 1 {
+				fullPath := strings.TrimSuffix(parts[1], ". (Page 1)")
+				// Extract just the project name from the full path
+				pathParts := strings.Split(fullPath, "/")
+				if len(pathParts) > 0 {
+					projectName = pathParts[len(pathParts)-1]
+				}
+			}
+			break
+		}
+	}
+
+	// Skip header lines and parse pipeline data
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Showing") || strings.HasPrefix(line, "State") {
+			continue
+		}
+
+		// Parse lines like: "(running) • #1997196243	(#6866)	refs/merge-requests/406/head	(less than a minute ago)"
+		if strings.Contains(line, "#") {
+			pipeline := parsePipelineLine(line, projectName)
+			if pipeline.ID != 0 {
+				pipelines = append(pipelines, pipeline)
+			}
+		}
+	}
+
+	return pipelines, nil
+}
+
+func parsePipelineLine(line, projectName string) core.Pipeline {
+	// Extract status
+	var status string
+	if strings.Contains(line, "(running)") {
+		status = "running"
+	} else if strings.Contains(line, "(success)") {
+		status = "success"
+	} else if strings.Contains(line, "(failed)") {
+		status = "failed"
+	} else if strings.Contains(line, "(waiting_for_resource)") {
+		status = "waiting_for_resource"
+	} else {
+		status = "unknown"
+	}
+
+	// Extract pipeline ID
+	var pipelineID int
+	if idx := strings.Index(line, "#"); idx != -1 {
+		idStr := ""
+		for i := idx + 1; i < len(line) && (line[i] >= '0' && line[i] <= '9'); i++ {
+			idStr += string(line[i])
+		}
+		if id, err := strconv.Atoi(idStr); err == nil {
+			pipelineID = id
+		}
+	}
+
+	// Extract ref (simplified) - it's the 3rd tab-separated field
+	parts := strings.Split(line, "\t")
+	ref := "unknown"
+	if len(parts) >= 3 {
+		ref = strings.TrimSpace(parts[2])
+		// Clean up long merge request refs
+		if strings.HasPrefix(ref, "refs/merge-requests/") {
+			ref = "MR-" + strings.Split(ref, "/")[2]
+		}
+	}
+
+	// Determine job status based on pipeline status
+	jobs := "pending"
+	switch status {
+	case "running":
+		jobs = "in progress"
+	case "success":
+		jobs = "completed"
+	case "failed":
+		jobs = "failed"
+	case "waiting_for_resource":
+		jobs = "queued"
+	}
+
+	return core.Pipeline{
+		ID:          pipelineID,
+		Status:      status,
+		Ref:         ref,
+		ProjectName: projectName,
+		Jobs:        jobs,
 	}
 }
 

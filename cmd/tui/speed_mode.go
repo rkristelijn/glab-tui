@@ -31,10 +31,17 @@ func NewSpeedMode() SpeedModeModel {
 		"11099439598", "11099439587", "11099434107", // Pipeline Q's targets
 	}
 
+	// Auto-detect current project
+	projectPath, err := getCurrentProjectPath()
+	if err != nil {
+		// Fallback to generic project for demo
+		projectPath = "demo/project"
+	}
+
 	return SpeedModeModel{
 		pipelines:   latestJobs,
 		statuses:    make(map[string]string),
-		wrapper:     gitlab.NewGlabWrapper("theapsgroup/agility/frontend-apps"),
+		wrapper:     gitlab.NewGlabWrapper(projectPath),
 		autoRefresh: true,
 		refreshRate: 2 * time.Second, // FASTER than Pipeline Q's 30 seconds!
 	}
@@ -197,8 +204,8 @@ func (m SpeedModeModel) fetchAllPipelines() tea.Cmd {
 // fetchPipelineStatus fetches status for a single job
 func (m SpeedModeModel) fetchPipelineStatus(jobID string) tea.Cmd {
 	return func() tea.Msg {
-		// Use glab API to get job status
-		cmd := exec.Command("glab", "api", fmt.Sprintf("jobs/%s", jobID), "-R", "theapsgroup/agility/frontend-apps")
+		// Use glab API to get job status (generic call without hardcoded project)
+		cmd := exec.Command("glab", "api", fmt.Sprintf("jobs/%s", jobID))
 		output, err := cmd.Output()
 		if err != nil {
 			return speedUpdateMsg{pipeline: jobID, status: "error: " + err.Error()}
