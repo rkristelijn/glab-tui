@@ -401,15 +401,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					pipelines, err := getRemoteProjectPipelines(m.projectPath)
 					if err == nil {
 						m.pipelines = pipelines
+						// Reset cursor to avoid out of bounds
+						if len(m.pipelines) == 0 {
+							m.pipelineCursor = 0
+						} else if m.pipelineCursor >= len(m.pipelines) {
+							m.pipelineCursor = len(m.pipelines) - 1
+						}
 					}
 				} else if m.gitlab == nil {
 					// Demo mode - refresh mock data
 					m.pipelines = core.GetMockPipelines()
+					if len(m.pipelines) == 0 {
+						m.pipelineCursor = 0
+					} else if m.pipelineCursor >= len(m.pipelines) {
+						m.pipelineCursor = len(m.pipelines) - 1
+					}
 				} else {
 					// Local GitLab mode
 					pipelines, err := getProjectPipelinesViaGlab(m.projectPath)
 					if err == nil {
 						m.pipelines = pipelines
+						if len(m.pipelines) == 0 {
+							m.pipelineCursor = 0
+						} else if m.pipelineCursor >= len(m.pipelines) {
+							m.pipelineCursor = len(m.pipelines) - 1
+						}
 					}
 				}
 			}
@@ -538,11 +554,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			switch m.currentView {
 			case pipelineView:
-				if m.pipelineCursor < len(m.pipelines)-1 {
+				if len(m.pipelines) > 0 && m.pipelineCursor < len(m.pipelines)-1 {
 					m.pipelineCursor++
 				}
 			case jobView:
-				if m.jobCursor < len(m.jobs)-1 {
+				if len(m.jobs) > 0 && m.jobCursor < len(m.jobs)-1 {
 					m.jobCursor++
 				}
 			}
@@ -565,12 +581,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.currentView {
 			case pipelineView:
 				m.pipelineCursor += 5
-				if m.pipelineCursor >= len(m.pipelines) {
+				if len(m.pipelines) > 0 && m.pipelineCursor >= len(m.pipelines) {
 					m.pipelineCursor = len(m.pipelines) - 1
 				}
 			case jobView:
 				m.jobCursor += 5
-				if m.jobCursor >= len(m.jobs) {
+				if len(m.jobs) > 0 && m.jobCursor >= len(m.jobs) {
 					m.jobCursor = len(m.jobs) - 1
 				}
 			}
@@ -600,19 +616,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	// Clear screen and reset cursor
+	result := "\033[2J\033[H"
+
 	// Title bar
 	title := titleStyle.Render("🚀 GitLab TUI - " + getProjectName(m.projectPath))
 
 	switch m.currentView {
 	case pipelineView:
-		return m.renderPipelineView(title)
+		result += m.renderPipelineView(title)
 	case jobView:
-		return m.renderJobView(title)
+		result += m.renderJobView(title)
 	case logView:
-		return m.renderLogView(title)
+		result += m.renderLogView(title)
 	default:
-		return m.renderPipelineView(title)
+		result += m.renderPipelineView(title)
 	}
+
+	return result
 }
 
 func (m model) renderPipelineView(title string) string {
