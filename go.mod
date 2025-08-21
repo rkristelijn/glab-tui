@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/xanzy/go-gitlab v0.115.0
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (

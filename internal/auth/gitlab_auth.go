@@ -2,9 +2,9 @@ package auth
 
 import (
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"os"
-	"os/exec"
-	"strings"
+	"path/filepath"
 )
 
 // GitLabAuth handles GitLab authentication
@@ -13,14 +13,21 @@ type GitLabAuth struct {
 	baseURL string
 }
 
+// GlabConfig represents the glab CLI config structure
+type GlabConfig struct {
+	Hosts map[string]struct {
+		Token string `yaml:"token"`
+	} `yaml:"hosts"`
+}
+
 // NewGitLabAuth creates a new GitLab authentication handler
 func NewGitLabAuth() (*GitLabAuth, error) {
 	auth := &GitLabAuth{
 		baseURL: "https://gitlab.com",
 	}
 
-	// Try to get token from glab CLI first
-	if token, err := auth.getTokenFromGlab(); err == nil && token != "" {
+	// Try to get token from glab config file
+	if token, err := auth.getTokenFromGlabConfig(); err == nil && token != "" {
 		auth.token = token
 		return auth, nil
 	}
@@ -39,20 +46,30 @@ func NewGitLabAuth() (*GitLabAuth, error) {
 	return nil, fmt.Errorf("no GitLab token found - run 'glab auth login' first")
 }
 
-// getTokenFromGlab gets the token from glab CLI
-func (g *GitLabAuth) getTokenFromGlab() (string, error) {
-	cmd := exec.Command("glab", "auth", "token")
-	output, err := cmd.Output()
+// getTokenFromGlabConfig reads the token from glab CLI config file
+func (g *GitLabAuth) getTokenFromGlabConfig() (string, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	token := strings.TrimSpace(string(output))
-	if token == "" {
-		return "", fmt.Errorf("empty token from glab")
+	configPath := filepath.Join(homeDir, ".config", "glab-cli", "config.yml")
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", err
 	}
 
-	return token, nil
+	var config GlabConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return "", err
+	}
+
+	if host, exists := config.Hosts["gitlab.com"]; exists {
+		return host.Token, nil
+	}
+
+	return "", fmt.Errorf("no token found for gitlab.com in glab config")
 }
 
 // GetToken returns the GitLab token
