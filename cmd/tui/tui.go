@@ -388,8 +388,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.currentView {
 			case jobView:
 				m.currentView = pipelineView
+				return m, tea.ClearScreen
 			case logView:
 				m.currentView = jobView
+				return m, tea.ClearScreen
 			}
 		case "r":
 			// Refresh pipelines
@@ -455,6 +457,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.jobCursor = 0
 						m.selectedPipelineID = selectedPipeline.ID
 						m.currentView = jobView
+						return m, tea.ClearScreen
 					} else {
 						// Real GitLab mode
 						jobs, err := m.gitlab.GetPipelineJobs(selectedPipeline.ID)
@@ -463,6 +466,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.jobCursor = 0
 							m.selectedPipelineID = selectedPipeline.ID
 							m.currentView = jobView
+							return m, tea.ClearScreen
 						}
 					}
 				}
@@ -499,6 +503,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						m.selectedJobID = selectedJob.ID
 						m.currentView = logView
+						return m, tea.ClearScreen
 					} else {
 						// Real GitLab mode
 						logs, err := m.gitlab.GetJobLogs(selectedJob.ID)
@@ -506,6 +511,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.logs = logs
 							m.selectedJobID = selectedJob.ID
 							m.currentView = logView
+							return m, tea.ClearScreen
 						}
 					}
 				}
@@ -531,6 +537,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						"📝 Example: cd /path/to/gitlab/project && glab-tui"
 					m.selectedJobID = selectedJob.ID
 					m.currentView = logView
+					return m, tea.ClearScreen
 				} else {
 					// Real GitLab mode - exit TUI and start streaming
 					return m, tea.Sequence(
