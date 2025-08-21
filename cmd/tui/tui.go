@@ -113,6 +113,25 @@ func (m model) Init() tea.Cmd {
 	return nil
 }
 
+// StartWithMockData starts the TUI with mock data for demo purposes
+func StartWithMockData() error {
+	fmt.Println("🚀 Starting GitLab TUI Demo Mode...")
+
+	// Create model with mock data
+	m := model{
+		currentView:      pipelineView,
+		projectPath:      "demo-project",
+		pipelines:        core.GetMockPipelines(),
+		pipelineCursor:   0,
+		pipelineSelected: make(map[int]struct{}),
+		gitlab:           nil, // No real GitLab connection in demo mode
+	}
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	_, err := p.Run()
+	return err
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -142,23 +161,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Enter pipeline -> show jobs
 				if m.pipelineCursor < len(m.pipelines) {
 					selectedPipeline := m.pipelines[m.pipelineCursor]
-					jobs, err := m.gitlab.GetPipelineJobs(selectedPipeline.ID)
-					if err == nil {
-						m.jobs = jobs
+
+					// Handle demo mode (when gitlab is nil)
+					if m.gitlab == nil {
+						// Use mock jobs for demo
+						m.jobs = core.GetMockJobs()
 						m.jobCursor = 0
 						m.selectedPipelineID = selectedPipeline.ID
 						m.currentView = jobView
+					} else {
+						// Real GitLab mode
+						jobs, err := m.gitlab.GetPipelineJobs(selectedPipeline.ID)
+						if err == nil {
+							m.jobs = jobs
+							m.jobCursor = 0
+							m.selectedPipelineID = selectedPipeline.ID
+							m.currentView = jobView
+						}
 					}
 				}
 			case jobView:
 				// Enter job -> show logs
 				if m.jobCursor < len(m.jobs) {
 					selectedJob := m.jobs[m.jobCursor]
-					logs, err := m.gitlab.GetJobLogs(selectedJob.ID)
-					if err == nil {
-						m.logs = logs
+
+					// Handle demo mode (when gitlab is nil)
+					if m.gitlab == nil {
+						// Use mock logs for demo
+						m.logs = "🎯 Demo Mode - Mock Job Logs\n\n" +
+							"📋 Job: " + selectedJob.Name + "\n" +
+							"📊 Status: " + selectedJob.Status + "\n" +
+							"🏗️  Stage: " + selectedJob.Stage + "\n\n" +
+							"Sample log output:\n" +
+							"[INFO] Starting job execution...\n" +
+							"[INFO] Installing dependencies...\n" +
+							"[INFO] Running tests...\n" +
+							"[SUCCESS] All tests passed!\n" +
+							"[INFO] Job completed successfully\n\n" +
+							"💡 In real GitLab projects, you'd see actual job logs here.\n" +
+							"🔥 Use 'l' key for real-time streaming in live projects!"
 						m.selectedJobID = selectedJob.ID
 						m.currentView = logView
+					} else {
+						// Real GitLab mode
+						logs, err := m.gitlab.GetJobLogs(selectedJob.ID)
+						if err == nil {
+							m.logs = logs
+							m.selectedJobID = selectedJob.ID
+							m.currentView = logView
+						}
 					}
 				}
 			}
@@ -166,11 +217,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Quick logs --follow for selected job
 			if m.currentView == jobView && m.jobCursor < len(m.jobs) {
 				selectedJob := m.jobs[m.jobCursor]
-				// Exit TUI and start streaming logs
-				return m, tea.Sequence(
-					tea.Quit,
-					tea.ExecProcess(exec.Command("glab-tui", "logs", "--follow", strconv.Itoa(selectedJob.ID)), nil),
-				)
+
+				// Handle demo mode
+				if m.gitlab == nil {
+					// Show demo message instead of trying to stream
+					m.logs = "🎯 Demo Mode - Real-time Streaming Preview\n\n" +
+						"📋 Job: " + selectedJob.Name + "\n" +
+						"🔥 In a real GitLab project, this would start:\n" +
+						"   glab-tui logs --follow " + strconv.Itoa(selectedJob.ID) + "\n\n" +
+						"🔄 Live streaming features:\n" +
+						"   • Real-time log updates every 2 seconds\n" +
+						"   • Auto-completion detection\n" +
+						"   • Graceful Ctrl+C exit\n" +
+						"   • Live job status monitoring\n\n" +
+						"💡 Try this in a real GitLab repository to see live streaming!\n" +
+						"📝 Example: cd /path/to/gitlab/project && glab-tui"
+					m.selectedJobID = selectedJob.ID
+					m.currentView = logView
+				} else {
+					// Real GitLab mode - exit TUI and start streaming
+					return m, tea.Sequence(
+						tea.Quit,
+						tea.ExecProcess(exec.Command("glab-tui", "logs", "--follow", strconv.Itoa(selectedJob.ID)), nil),
+					)
+				}
 			}
 		case "up", "k":
 			switch m.currentView {

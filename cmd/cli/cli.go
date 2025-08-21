@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rkristelijn/glab-tui/cmd/tui"
 	"github.com/rkristelijn/glab-tui/internal/config"
 	"github.com/rkristelijn/glab-tui/internal/core"
 	"github.com/rkristelijn/glab-tui/internal/gitlab"
@@ -68,6 +69,10 @@ func Run(args []string) {
 		testRealGitLab()
 	case "help", "h", "--help":
 		showHelp()
+	case "demo", "d":
+		// Demo mode with mock data
+		fmt.Println("🎯 Starting glab-tui in DEMO mode with mock data...")
+		startTUIWithMockData()
 	case "version", "v", "--version":
 		fmt.Println("glab-tui v0.1.0")
 	default:
@@ -597,6 +602,7 @@ COMMANDS:
     job, j <job-id>           Check specific job status
     logs, l [--follow] <job-id>  Show job logs
         --follow, -f          🔥 Stream logs in real-time
+    demo, d                   🎯 Demo mode with mock data (for non-GitLab repos)
     test-real                 Test GitLab API connection
     speed                     🔥 Speed challenge mode
     help, h                   Show this help
@@ -604,6 +610,7 @@ COMMANDS:
 
 EXAMPLES:
     glab-tui                          # Start TUI
+    glab-tui demo                     # 🎯 Demo mode (works anywhere!)
     glab-tui speed                    # 🔥 CHALLENGE MODE
     glab-tui pipelines                # List pipelines in CLI
     glab-tui job 11098249149         # Check specific job
@@ -612,4 +619,14 @@ EXAMPLES:
     glab-tui logs -f 11098249149     # 🔥 Stream logs (short flag)
     glab-tui test-real               # Test GitLab connection
     glab-tui help                    # Show help`)
+}
+
+// startTUIWithMockData starts TUI with mock data for demo purposes
+func startTUIWithMockData() {
+	fmt.Println("🎯 Demo Mode: Using mock GitLab data for demonstration")
+	fmt.Println("📝 This shows how glab-tui works with real GitLab projects")
+	fmt.Println("")
+
+	// Import TUI package and start with mock data
+	tui.StartWithMockData()
 }

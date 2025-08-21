@@ -59,6 +59,20 @@ func GetMockProjects() []Project {
 	}
 }
 
+// GetMockJobs returns mock job data for demo purposes
+func GetMockJobs() []Job {
+	return []Job{
+		{ID: 11100001, Name: "build-frontend", Status: "success", Stage: "build"},
+		{ID: 11100002, Name: "test-unit", Status: "success", Stage: "test"},
+		{ID: 11100003, Name: "test-integration", Status: "running", Stage: "test"},
+		{ID: 11100004, Name: "zap-security-scan", Status: "running", Stage: "security"},
+		{ID: 11100005, Name: "build-docker", Status: "pending", Stage: "build"},
+		{ID: 11100006, Name: "deploy-staging", Status: "pending", Stage: "deploy"},
+		{ID: 11100007, Name: "cypress-e2e", Status: "pending", Stage: "test"},
+		{ID: 11100008, Name: "deploy-production", Status: "pending", Stage: "deploy"},
+	}
+}
+
 // Future methods:
 // func (ps *PipelineService) GetGroupProjects(groupID int) ([]Project, error)
 // func (ps *PipelineService) GetProjectPipelines(projectID int) ([]Pipeline, error)
