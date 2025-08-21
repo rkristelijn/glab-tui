@@ -165,7 +165,7 @@ func getRemoteProjectPipelines(projectPath string) ([]core.Pipeline, error) {
 	fmt.Printf("📡 Fetching real pipelines for %s...\n", projectPath)
 
 	// Use glab ci list with remote project (correct command)
-	cmd := exec.Command("glab", "ci", "list", "--repo", projectPath)
+	cmd := exec.Command("glab", "ci", "list", "--repo", projectPath, "--per-page", "10")
 	output, err := cmd.Output()
 	if err != nil {
 		fmt.Printf("❌ Failed to get pipelines: %v\n", err)
@@ -546,6 +546,54 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.jobCursor++
 				}
 			}
+		case "pgup", "ctrl+u":
+			// Page up - jump 5 items
+			switch m.currentView {
+			case pipelineView:
+				m.pipelineCursor -= 5
+				if m.pipelineCursor < 0 {
+					m.pipelineCursor = 0
+				}
+			case jobView:
+				m.jobCursor -= 5
+				if m.jobCursor < 0 {
+					m.jobCursor = 0
+				}
+			}
+		case "pgdown", "ctrl+d":
+			// Page down - jump 5 items
+			switch m.currentView {
+			case pipelineView:
+				m.pipelineCursor += 5
+				if m.pipelineCursor >= len(m.pipelines) {
+					m.pipelineCursor = len(m.pipelines) - 1
+				}
+			case jobView:
+				m.jobCursor += 5
+				if m.jobCursor >= len(m.jobs) {
+					m.jobCursor = len(m.jobs) - 1
+				}
+			}
+		case "home", "g":
+			// Go to first item
+			switch m.currentView {
+			case pipelineView:
+				m.pipelineCursor = 0
+			case jobView:
+				m.jobCursor = 0
+			}
+		case "end", "G":
+			// Go to last item
+			switch m.currentView {
+			case pipelineView:
+				if len(m.pipelines) > 0 {
+					m.pipelineCursor = len(m.pipelines) - 1
+				}
+			case jobView:
+				if len(m.jobs) > 0 {
+					m.jobCursor = len(m.jobs) - 1
+				}
+			}
 		}
 	}
 	return m, nil
@@ -590,8 +638,37 @@ func (m model) renderPipelineView(title string) string {
 	s += header + "                                                     \n"
 	s += lipgloss.NewStyle().Faint(true).Render(statusLine) + "\n\n"
 
-	// Pipeline list with enhanced visualization
-	for i, pipeline := range m.pipelines {
+	// Implement scrolling - show max 8 pipelines at a time
+	maxVisible := 8
+	startIdx := 0
+	endIdx := len(m.pipelines)
+
+	// Calculate scroll window
+	if len(m.pipelines) > maxVisible {
+		// Keep cursor in middle of visible area when possible
+		startIdx = m.pipelineCursor - maxVisible/2
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		endIdx = startIdx + maxVisible
+		if endIdx > len(m.pipelines) {
+			endIdx = len(m.pipelines)
+			startIdx = endIdx - maxVisible
+			if startIdx < 0 {
+				startIdx = 0
+			}
+		}
+	}
+
+	// Show scroll indicator if needed
+	if len(m.pipelines) > maxVisible {
+		scrollInfo := fmt.Sprintf("Showing %d-%d of %d pipelines", startIdx+1, endIdx, len(m.pipelines))
+		s += lipgloss.NewStyle().Faint(true).Render(scrollInfo) + "\n\n"
+	}
+
+	// Pipeline list with enhanced visualization (only visible ones)
+	for i := startIdx; i < endIdx; i++ {
+		pipeline := m.pipelines[i]
 		cursor := "  "
 		if m.pipelineCursor == i {
 			cursor = "▶ "
@@ -633,7 +710,7 @@ func (m model) renderPipelineView(title string) string {
 		s += line + "\n"
 	}
 
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Enter: view jobs | r: refresh | q: quit")
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Ctrl+U/D: page up/down | g/G: first/last | Enter: view jobs | r: refresh | q: quit")
 	return s
 }
 
@@ -759,7 +836,7 @@ func (m model) renderJobView(title string) string {
 		s += line + "\n"
 	}
 
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Enter: view logs | Esc: back to pipelines | l: logs --follow")
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Ctrl+U/D: page up/down | g/G: first/last | Enter: view logs | Esc: back to pipelines | l: logs --follow")
 	return s
 }
 
