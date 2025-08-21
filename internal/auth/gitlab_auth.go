@@ -2,9 +2,9 @@ package auth
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // GitLabAuth handles GitLab authentication
@@ -60,13 +60,39 @@ func (g *GitLabAuth) getTokenFromGlabConfig() (string, error) {
 		return "", err
 	}
 
-	var config GlabConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return "", err
-	}
+	// Parse manually to handle !!null tags
+	content := string(data)
+	lines := strings.Split(content, "\n")
 
-	if host, exists := config.Hosts["gitlab.com"]; exists {
-		return host.Token, nil
+	inGitLabHost := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Check if we're in the gitlab.com section
+		if strings.Contains(line, "gitlab.com:") {
+			inGitLabHost = true
+			continue
+		}
+
+		// If we're in gitlab.com section and find token line
+		if inGitLabHost && strings.HasPrefix(line, "token:") {
+			// Extract token value, handling !!null prefix
+			tokenPart := strings.TrimPrefix(line, "token:")
+			tokenPart = strings.TrimSpace(tokenPart)
+
+			if strings.HasPrefix(tokenPart, "!!null ") {
+				token := strings.TrimPrefix(tokenPart, "!!null ")
+				token = strings.TrimSpace(token)
+				if token != "" {
+					return token, nil
+				}
+			}
+		}
+
+		// If we hit another host section, we're done with gitlab.com
+		if inGitLabHost && strings.HasSuffix(line, ":") && !strings.HasPrefix(line, " ") {
+			break
+		}
 	}
 
 	return "", fmt.Errorf("no token found for gitlab.com in glab config")
