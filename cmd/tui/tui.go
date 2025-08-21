@@ -686,8 +686,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	// Title bar
-	title := titleStyle.Render("🚀 GitLab TUI - " + getProjectName(m.projectPath))
+	// Enhanced title bar with more context
+	projectName := getProjectName(m.projectPath)
+	var title string
+
+	switch m.currentView {
+	case pipelineView:
+		runningCount := 0
+		for _, pipeline := range m.pipelines {
+			if pipeline.Status == "running" {
+				runningCount++
+			}
+		}
+		title = titleStyle.Render(fmt.Sprintf("🚀 GitLab TUI - %s | %d pipelines (%d running)",
+			projectName, len(m.pipelines), runningCount))
+	case jobView:
+		runningJobs := 0
+		successJobs := 0
+		for _, job := range m.jobs {
+			switch job.Status {
+			case "running":
+				runningJobs++
+			case "success":
+				successJobs++
+			}
+		}
+		title = titleStyle.Render(fmt.Sprintf("🚀 GitLab TUI - %s | Pipeline #%d | %d jobs (%d✅ %d🔄)",
+			projectName, m.selectedPipelineID, len(m.jobs), successJobs, runningJobs))
+	case logView:
+		title = titleStyle.Render(fmt.Sprintf("🚀 GitLab TUI - %s | Job #%d Logs",
+			projectName, m.selectedJobID))
+	default:
+		title = titleStyle.Render("🚀 GitLab TUI - " + projectName)
+	}
 
 	switch m.currentView {
 	case pipelineView:
@@ -1093,9 +1124,19 @@ func parsePipelineLine(line, projectName string) core.Pipeline {
 }
 
 func getProjectName(projectPath string) string {
-	parts := strings.Split(projectPath, "/")
-	if len(parts) > 0 {
+	if strings.Contains(projectPath, "/") {
+		// Remote project like "theapsgroup/agility/frontend-apps"
+		parts := strings.Split(projectPath, "/")
+		if len(parts) >= 2 {
+			// Show group/project for better context
+			return fmt.Sprintf("%s/%s", parts[len(parts)-2], parts[len(parts)-1])
+		}
 		return parts[len(parts)-1]
 	}
-	return "project"
+
+	// Local project or demo
+	if projectPath == "" {
+		return "demo-project"
+	}
+	return projectPath
 }
