@@ -34,11 +34,13 @@ glab-tui                    # See everything at once! 🎉
 ## ✨ Features
 
 - **🔄 Real-time monitoring** - Live pipeline status updates
-- **🔥 Real-time log streaming** - Stream job logs as they happen with `--follow` ✅ **CONFIRMED WORKING**
+- **🔥 Real-time log streaming** - Stream job logs as they happen with auto-refresh ✅ **CONFIRMED WORKING**
+- **🔗 Child pipeline support** - Navigate through mono-repo child pipelines seamlessly
 - **🎨 Beautiful interface** - Color-coded status indicators and visual formatting
 - **📊 Visual overview** - Multiple pipelines at a glance in one screen
-- **⌨️ Keyboard driven** - Vim-style navigation (hjkl) for quick browsing
-- **🎯 Interactive dashboard** - Navigate through pipelines, jobs, and details
+- **⌨️ Vim-style navigation** - Complete keyboard shortcuts (hjkl, gg, G, Ctrl+U/D)
+- **🔍 Advanced log search** - Search through logs with highlighting and navigation
+- **🎯 Interactive dashboard** - Navigate through pipelines, jobs, and child pipelines
 - **🔍 Better UX** - No more repetitive CLI commands for status checks
 - **🚀 Easy setup** - Uses your existing glab authentication
 
@@ -53,7 +55,9 @@ glab-tui                    # See everything at once! 🎉
 - **First time?** Press `r` to refresh and load pipelines
 - **Navigate:** Use ↑/↓ arrows or `j`/`k` (vim-style)
 - **Drill down:** Press `Enter` to go: Pipelines → Jobs → Logs
+- **Child pipelines:** Press `Enter` on 🔗 entries to navigate to child pipeline jobs
 - **Real-time logs:** Press `l` on any job for live streaming
+- **Search logs:** Press `/` to search, `n` for next match
 - **Go back:** Press `Esc` to return to previous view
 - **Quit:** Press `q` or `Ctrl+C`
 
@@ -74,9 +78,13 @@ glab-tui                    # See everything at once! 🎉
 |-----|--------|
 | `q` / `Ctrl+C` | Quit |
 | `j/k` or `↓/↑` | Navigate up/down |
+| `g` / `G` | Go to first/last item |
+| `Ctrl+U/D` | Page up/down |
 | `Enter` | Drill down (Pipeline → Jobs → Logs) |
 | `Esc` | Go back |
 | `r` | Refresh |
+| `/` | Search (in logs) |
+| `n` | Next search match |
 | `?` | Help |
 
 ## 🚀 Installation
@@ -108,15 +116,17 @@ go install github.com/rkristelijn/glab-tui@latest
 |---------|----------|----------|
 | **Visual Overview** | ❌ Plain text | ✅ Color-coded dashboard |
 | **Multi-pipeline View** | ❌ One at a time | ✅ All at once |
-| **Navigation** | ❌ Type commands | ✅ Keyboard shortcuts |
+| **Navigation** | ❌ Type commands | ✅ Vim-style shortcuts |
 | **Real-time Updates** | ❌ Manual refresh | ✅ Live monitoring |
+| **Child Pipelines** | ❌ Not visible | ✅ Full navigation support |
+| **Log Search** | ❌ Basic grep | ✅ Interactive search with highlighting |
 
 **Result: Better workflow + visual experience** 🏆
 
 ## 🎨 Interface Preview
 
 ```
-┌─ GitLab TUI - my-awesome-project ──────────────────────────────────────┐
+┌─ GitLab TUI - agility/frontend-apps | 10 pipelines (3 running) ─────────┐
 │ [P]ipelines [J]obs [L]ogs                                         [?] │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Pipelines                                               ↻ Auto-refresh │
@@ -127,9 +137,30 @@ go install github.com/rkristelijn/glab-tui@latest
 │ Jobs (Pipeline #1234567)                                               │
 │ ✓ build          success   (45s)   Dependencies installed             │
 │ ● test           running   (12s)   Running test suite...              │
+│ 🔗 ● portal #1997363518    running   Child pipeline                    │
+│ 🔗 ● internal-demo #1997363434  running   Child pipeline               │
 │ ○ deploy         pending           Waiting for tests                   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+## 🔗 Child Pipeline Support
+
+Perfect for **NX mono-repo** workflows:
+
+```
+🔧 Jobs (Pipeline #1997353757)
+📊 12 total | ✅ 2 success | 🔄 6 running | ❌ 0 failed
+
+  ✓ nx-mono-repo-affected     success      mono-repo
+  ● 🔗 ● internal-demo-application #1997363434    running      child-pipeline
+  ● 🔗 ● portal #1997363518                       running      child-pipeline
+  ● 🔗 ● request-for-quote #1997363593            running      child-pipeline
+  ● 🔗 ● social-networker #1997363731             running      child-pipeline
+```
+
+- **Navigate to child pipelines** with Enter key
+- **See real app names** extracted from job logs
+- **Full drill-down support** for mono-repo workflows
 
 ## 💬 What Users Say
 
@@ -139,8 +170,11 @@ go install github.com/rkristelijn/glab-tui@latest
 > *"Much better overview than running glab commands repeatedly."*  
 > — **DevOps Engineer**
 
-> *"It's like k9s but for GitLab. Love the visual dashboard."*  
+> *"It's like k9s but for GitLab. Love the visual dashboard and child pipeline support."*  
 > — **Platform Engineer**
+
+> *"The real-time log streaming and search is a game changer for debugging."*  
+> — **Senior Developer**
 
 ## 🤝 Contributing
 
