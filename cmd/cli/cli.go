@@ -81,7 +81,7 @@ func checkJob(jobIDStr string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Checking job %d in group/project/frontend-apps...\n", jobID)
+	fmt.Printf("Checking job %d in theapsgroup/agility/frontend-apps...\n", jobID)
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -121,7 +121,7 @@ func showJobLogs(jobIDStr string) {
 
 	fmt.Printf("Fetching logs for job %d...\n", jobID)
 
-	wrapper := gitlab.NewGlabWrapper("group/project/frontend-apps")
+	wrapper := gitlab.NewGlabWrapper("theapsgroup/agility/frontend-apps")
 	logs, err := wrapper.GetJobLogs(jobID)
 	if err != nil {
 		fmt.Printf("❌ Failed to get job logs: %v\n", err)
@@ -168,6 +168,7 @@ func showHelp() {
 
 USAGE:
     glab-tui                    Start interactive TUI (default)
+    glab-tui speed              🔥 SPEED CHALLENGE MODE
     glab-tui [COMMAND]          Run CLI command
 
 COMMANDS:
@@ -175,11 +176,13 @@ COMMANDS:
     job, j <job-id>           Check specific job status
     logs, l <job-id>          Show job logs
     test-real                 Test GitLab API connection
+    speed                     🔥 Speed challenge mode
     help, h                   Show this help
     version, v                Show version
 
 EXAMPLES:
     glab-tui                          # Start TUI
+    glab-tui speed                    # 🔥 CHALLENGE MODE
     glab-tui pipelines                # List pipelines in CLI
     glab-tui job 11098249149         # Check specific job
     glab-tui logs 11098249149        # Show job logs

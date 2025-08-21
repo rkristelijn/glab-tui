@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,6 +42,17 @@ var (
 )
 
 func Run() error {
+	// Check for SPEED MODE challenge
+	if len(os.Args) > 1 && os.Args[1] == "speed" {
+		fmt.Println("🔥 SPEED CHALLENGE MODE ACTIVATED!")
+		fmt.Println("⚡ Monitoring Pipeline Q's challenge targets...")
+
+		p := tea.NewProgram(NewSpeedMode(), tea.WithAltScreen())
+		_, err := p.Run()
+		return err
+	}
+
+	// Regular TUI mode
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
@@ -78,7 +90,7 @@ type model struct {
 
 func initialModel() model {
 	// Create GitLab wrapper
-	wrapper := gitlab.NewGlabWrapper("group/project/frontend-apps")
+	wrapper := gitlab.NewGlabWrapper("theapsgroup/agility/frontend-apps")
 
 	// Try to get real data using glab
 	pipelines, err := wrapper.GetProjectPipelines(12345678) // Replace with your project ID
