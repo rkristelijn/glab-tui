@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -70,6 +71,15 @@ const (
 	logView
 )
 
+// Timer message for real-time updates
+type tickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Second*3, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
 type model struct {
 	// View state
 	currentView viewMode
@@ -88,6 +98,9 @@ type model struct {
 	// Log view
 	logs          string
 	selectedJobID int
+	logCursor     int    // For navigating through log lines
+	searchMode    bool   // Whether we're in search mode
+	searchQuery   string // Current search query
 
 	// GitLab wrapper
 	gitlab *gitlab.GlabWrapper
@@ -443,19 +456,58 @@ func extractString(line, key string) string {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tickMsg:
+		// Real-time updates for log view
+		if m.currentView == logView && m.selectedJobID != 0 {
+			// Refresh logs for running jobs
+			if strings.Contains(m.projectPath, "/") {
+				// Remote mode - fetch fresh logs
+				logs, err := getRemoteJobLogs(m.projectPath, m.selectedJobID)
+				if err == nil && logs != m.logs {
+					// Keep cursor position relative to end if we were at the end
+					oldLines := strings.Split(m.logs, "\n")
+					newLines := strings.Split(logs, "\n")
+
+					// If cursor was near the end, move it to new end
+					if len(oldLines) > 0 && m.logCursor >= len(oldLines)-5 {
+						m.logCursor = len(newLines) - 1
+					}
+
+					m.logs = logs
+				}
+			}
+		}
+		return m, tickCmd() // Schedule next tick
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "/":
+			// Start search mode (only in log view)
+			if m.currentView == logView {
+				m.searchMode = true
+				m.searchQuery = ""
+			}
+		case "n":
+			// Next search match (only in log view with active search)
+			if m.currentView == logView && m.searchMode && m.searchQuery != "" {
+				m.findNextMatch()
+			}
 		case "esc":
-			// Go back to previous view
-			switch m.currentView {
-			case jobView:
-				m.currentView = pipelineView
-				return m, tea.ClearScreen
-			case logView:
-				m.currentView = jobView
-				return m, tea.ClearScreen
+			// Handle escape - exit search mode or go back
+			if m.searchMode {
+				m.searchMode = false
+				m.searchQuery = ""
+			} else {
+				// Go back to previous view
+				switch m.currentView {
+				case jobView:
+					m.currentView = pipelineView
+					return m, tea.ClearScreen
+				case logView:
+					m.currentView = jobView
+					return m, tea.ClearScreen
+				}
 			}
 		case "r":
 			// Refresh pipelines
@@ -567,7 +619,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						m.selectedJobID = selectedJob.ID
 						m.currentView = logView
-						return m, tea.ClearScreen
+						m.logCursor = 0                                 // Reset log cursor
+						return m, tea.Batch(tea.ClearScreen, tickCmd()) // Start real-time updates
 					} else {
 						// Real GitLab mode
 						logs, err := m.gitlab.GetJobLogs(selectedJob.ID)
@@ -575,7 +628,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.logs = logs
 							m.selectedJobID = selectedJob.ID
 							m.currentView = logView
-							return m, tea.ClearScreen
+							m.logCursor = 0                                 // Reset log cursor
+							return m, tea.Batch(tea.ClearScreen, tickCmd()) // Start real-time updates
 						}
 					}
 				}
@@ -601,7 +655,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						"📝 Example: cd /path/to/gitlab/project && glab-tui"
 					m.selectedJobID = selectedJob.ID
 					m.currentView = logView
-					return m, tea.ClearScreen
+					m.logCursor = 0                                 // Reset log cursor
+					return m, tea.Batch(tea.ClearScreen, tickCmd()) // Start real-time updates
 				} else {
 					// Real GitLab mode - exit TUI and start streaming
 					return m, tea.Sequence(
@@ -620,6 +675,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.jobCursor > 0 {
 					m.jobCursor--
 				}
+			case logView:
+				if m.logCursor > 0 {
+					m.logCursor--
+				}
 			}
 		case "down", "j":
 			switch m.currentView {
@@ -630,6 +689,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case jobView:
 				if len(m.jobs) > 0 && m.jobCursor < len(m.jobs)-1 {
 					m.jobCursor++
+				}
+			case logView:
+				logLines := strings.Split(m.logs, "\n")
+				if m.logCursor < len(logLines)-1 {
+					m.logCursor++
 				}
 			}
 		case "pgup", "ctrl+u":
@@ -680,9 +744,84 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.jobCursor = len(m.jobs) - 1
 				}
 			}
+		default:
+			// Handle search input
+			if m.searchMode && m.currentView == logView {
+				if msg.String() == "backspace" {
+					if len(m.searchQuery) > 0 {
+						m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+					}
+				} else if len(msg.String()) == 1 {
+					// Add character to search query
+					m.searchQuery += msg.String()
+					// Reset cursor to first match
+					m.logCursor = 0
+				}
+			}
 		}
 	}
 	return m, nil
+}
+
+// findNextMatch finds the next search match and moves cursor there
+func (m *model) findNextMatch() {
+	if m.searchQuery == "" {
+		return
+	}
+
+	logLines := strings.Split(m.logs, "\n")
+	query := strings.ToLower(m.searchQuery)
+
+	// Start searching from current cursor + 1
+	for i := m.logCursor + 1; i < len(logLines); i++ {
+		if strings.Contains(strings.ToLower(logLines[i]), query) {
+			m.logCursor = i
+			return
+		}
+	}
+
+	// If not found, wrap around to beginning
+	for i := 0; i <= m.logCursor; i++ {
+		if strings.Contains(strings.ToLower(logLines[i]), query) {
+			m.logCursor = i
+			return
+		}
+	}
+}
+
+// highlightSearchTerm highlights search terms in log lines
+func highlightSearchTerm(line, query string) string {
+	if query == "" {
+		return line
+	}
+
+	// Simple highlighting - replace with colored version
+	highlighted := strings.ReplaceAll(
+		line,
+		query,
+		lipgloss.NewStyle().Background(lipgloss.Color("#FFFF00")).Foreground(lipgloss.Color("#000000")).Render(query),
+	)
+
+	// Also try case insensitive
+	if highlighted == line {
+		lowerLine := strings.ToLower(line)
+		lowerQuery := strings.ToLower(query)
+		if strings.Contains(lowerLine, lowerQuery) {
+			// Find the actual case in the original line
+			index := strings.Index(lowerLine, lowerQuery)
+			if index >= 0 {
+				originalTerm := line[index : index+len(query)]
+				highlighted = strings.Replace(
+					line,
+					originalTerm,
+					lipgloss.NewStyle().Background(lipgloss.Color("#FFFF00")).Foreground(lipgloss.Color("#000000")).Render(originalTerm),
+					1,
+				)
+			}
+		}
+	}
+
+	return highlighted
 }
 
 func (m model) View() string {
@@ -938,26 +1077,118 @@ func (m model) renderJobView(title string) string {
 }
 
 func (m model) renderLogView(title string) string {
-	header := headerStyle.Render(fmt.Sprintf("📋 Logs (Job #%d)", m.selectedJobID))
+	header := headerStyle.Render(fmt.Sprintf("📋 Logs (Job #%d) - Real-time", m.selectedJobID))
 
 	s := title + "\n"
-	s += header + "\n\n"
+	s += header + "\n"
 
-	// Show logs (simple display)
-	logLines := strings.Split(m.logs, "\n")
-	maxLines := 15 // Show last 15 lines to prevent overflow
-	startLine := 0
-	if len(logLines) > maxLines {
-		startLine = len(logLines) - maxLines
+	// Show search info if searching
+	if m.searchMode {
+		searchHeader := fmt.Sprintf("🔍 Search: %s", m.searchQuery)
+		if m.searchQuery == "" {
+			searchHeader = "🔍 Search: (type to search)"
+		}
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00")).Render(searchHeader) + "\n"
 	}
+	s += "\n"
 
-	for i := startLine; i < len(logLines) && i < startLine+maxLines; i++ {
-		if logLines[i] != "" {
-			s += logLines[i] + "\n"
+	// Parse log lines
+	logLines := strings.Split(m.logs, "\n")
+
+	// Filter lines if searching
+	var displayLines []string
+	var lineNumbers []int
+
+	if m.searchMode && m.searchQuery != "" {
+		for i, line := range logLines {
+			if strings.Contains(strings.ToLower(line), strings.ToLower(m.searchQuery)) {
+				displayLines = append(displayLines, line)
+				lineNumbers = append(lineNumbers, i+1)
+			}
+		}
+	} else {
+		displayLines = logLines
+		for i := range logLines {
+			lineNumbers = append(lineNumbers, i+1)
 		}
 	}
 
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: Esc: back to jobs | q: quit")
+	// Calculate visible window
+	maxLines := 20
+	totalLines := len(displayLines)
+
+	// Ensure logCursor is within bounds
+	if m.logCursor >= totalLines {
+		m.logCursor = totalLines - 1
+	}
+	if m.logCursor < 0 {
+		m.logCursor = 0
+	}
+
+	startLine := 0
+	endLine := totalLines
+
+	if totalLines > maxLines {
+		// Center the cursor in the visible area
+		startLine = m.logCursor - maxLines/2
+		if startLine < 0 {
+			startLine = 0
+		}
+		endLine = startLine + maxLines
+		if endLine > totalLines {
+			endLine = totalLines
+			startLine = endLine - maxLines
+			if startLine < 0 {
+				startLine = 0
+			}
+		}
+	}
+
+	// Display logs with line numbers and cursor
+	for i := startLine; i < endLine && i < len(displayLines); i++ {
+		cursor := "  "
+		lineStyle := lipgloss.NewStyle()
+
+		if i == m.logCursor {
+			cursor = "▶ "
+			lineStyle = selectedStyle
+		}
+
+		lineNum := ""
+		if len(lineNumbers) > i {
+			lineNum = fmt.Sprintf("%4d: ", lineNumbers[i])
+		}
+
+		line := displayLines[i]
+		if line != "" {
+			// Highlight search terms
+			if m.searchMode && m.searchQuery != "" {
+				line = highlightSearchTerm(line, m.searchQuery)
+			}
+
+			fullLine := fmt.Sprintf("%s%s%s", cursor, lineNum, line)
+			if i == m.logCursor {
+				fullLine = lineStyle.Render(fullLine)
+			}
+			s += fullLine + "\n"
+		}
+	}
+
+	// Status line
+	statusInfo := ""
+	if totalLines > maxLines {
+		statusInfo = fmt.Sprintf(" | Showing %d-%d of %d lines", startLine+1, endLine, totalLines)
+	}
+
+	searchInfo := ""
+	if m.searchMode && m.searchQuery != "" {
+		searchInfo = fmt.Sprintf(" | Found %d matches", len(displayLines))
+	}
+
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render(
+		fmt.Sprintf("Navigation: ↑/↓: scroll | /: search | n: next match | Esc: back%s%s",
+			statusInfo, searchInfo))
+
 	return s
 }
 
