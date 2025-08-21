@@ -276,10 +276,10 @@ ui:
 projects:
   # Project bookmarks
   - name: "Frontend Apps"
-    path: "theapsgroup/agility/frontend-apps"
+    path: "group/project/frontend-apps"
     default: true
   - name: "Platform Components"  
-    path: "theapsgroup/platform/standard-components"
+    path: "group/platform/standard-components"
     
 filters:
   # Default filtering options

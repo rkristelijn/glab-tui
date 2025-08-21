@@ -31,7 +31,7 @@ Bring the power and elegance of k9s to GitLab! Monitor pipelines, jobs, merge re
 ## 🎨 Interface Preview
 
 ```
-┌─ GitLab TUI - theapsgroup/agility/frontend-apps ─────────────────────────────┐
+┌─ GitLab TUI - group/project/frontend-apps ─────────────────────────────┐
 │ [P]ipelines [J]obs [M]Rs [A]rtifacts [V]ariables [S]ettings            [?] │
 ├───────────────────────────────────────────────────────────────────────────────┤
 │ Pipelines                                                     ↻ Auto-refresh │
@@ -70,10 +70,10 @@ Bring the power and elegance of k9s to GitLab! Monitor pipelines, jobs, merge re
 brew install glab-tui
 
 # Go install
-go install github.com/username/glab-tui@latest
+go install github.com/rkristelijn/glab-tui@latest
 
 # Binary releases
-curl -L https://github.com/username/glab-tui/releases/latest/download/glab-tui-linux-amd64 -o glab-tui
+curl -L https://github.com/rkristelijn/glab-tui/releases/latest/download/glab-tui-linux-amd64 -o glab-tui
 ```
 
 ## ⌨️ Keybindings
@@ -119,8 +119,8 @@ ui:
   vim_mode: true
   
 projects:
-  - "theapsgroup/agility/frontend-apps"
-  - "theapsgroup/platform/standard-components"
+  - "group/project/frontend-apps"
+  - "group/platform/standard-components"
   
 filters:
   default_branch_only: false

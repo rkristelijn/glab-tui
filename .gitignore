@@ -1,4 +1,9 @@
-# Binaries for programs and plugins
+# Secrets and environment files
+.env
+.env.local
+
+# Go build artifacts
+glab-tui
 *.exe
 *.exe~
 *.dll
@@ -8,11 +13,8 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
+# Output of the go coverage tool
 *.out
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
 
 # Go workspace file
 go.work
@@ -24,27 +26,14 @@ go.work
 *.swo
 *~
 
-# OS generated files
+# OS files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# Application specific
-glab-tui
-dist/
-build/
+# Nix
+result
+result-*
+
+# Development/debug files
+coms.json
 *.log
-
-# Configuration files (may contain sensitive data)
-config.yaml
-.env
-.env.local
-
-# Cache and temporary files
-cache/
-tmp/
-*.tmp
