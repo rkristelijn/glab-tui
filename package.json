@@ -1,0 +1,51 @@
+{
+  "name": "glab-tui",
+  "version": "0.1.0",
+  "description": "A k9s-inspired TUI for GitLab CI/CD pipelines - better than glab itself!",
+  "main": "bin/glab-tui",
+  "bin": {
+    "glab-tui": "./bin/glab-tui"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install-binary.js",
+    "test": "echo \"Testing glab-tui...\" && ./bin/glab-tui help"
+  },
+  "keywords": [
+    "gitlab",
+    "ci",
+    "cd",
+    "tui",
+    "terminal",
+    "pipeline",
+    "devops",
+    "k9s-inspired"
+  ],
+  "author": "Remi Kristelijn",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rkristelijn/glab-tui.git"
+  },
+  "homepage": "https://github.com/rkristelijn/glab-tui",
+  "bugs": {
+    "url": "https://github.com/rkristelijn/glab-tui/issues"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ]
+}

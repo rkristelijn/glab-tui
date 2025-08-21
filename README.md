@@ -140,18 +140,26 @@ glab api jobs/9876543/trace
 
 ## 🚀 Installation (Super Easy)
 
+### **🔥 The NPX Way (Recommended):**
 ```bash
-# Download and run - that's it!
+# Just run it - NPX handles everything!
+npx glab-tui                  # Start the TUI
+npx glab-tui speed           # Speed challenge mode
+npx glab-tui logs 12345      # View job logs
+```
+
+### **📦 Other Ways:**
+```bash
+# Download binary
 curl -L https://github.com/rkristelijn/glab-tui/releases/latest/download/glab-tui-linux-amd64 -o glab-tui
 chmod +x glab-tui
 ./glab-tui
 
-# Or with Go (if you're fancy)
+# Or with Go
 go install github.com/rkristelijn/glab-tui@latest
-
-# Or Homebrew (coming soon)
-brew install glab-tui
 ```
+
+**NPX = Zero setup, just works everywhere!** ✨
 
 ## 🎯 Getting Started (Literally 30 Seconds)
 
