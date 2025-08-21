@@ -137,9 +137,6 @@ func StartWithMockData() error {
 func StartWithRemoteProject(projectPath string) error {
 	fmt.Printf("🚀 Starting GitLab TUI for remote project: %s\n", projectPath)
 
-	// Create GitLab wrapper for remote project
-	gitlab := gitlab.NewGlabWrapper("") // Empty local path for remote mode
-
 	// Try to get pipelines for the remote project
 	pipelines, err := getRemoteProjectPipelines(projectPath)
 	if err != nil {
@@ -155,7 +152,7 @@ func StartWithRemoteProject(projectPath string) error {
 		pipelines:        pipelines,
 		pipelineCursor:   0,
 		pipelineSelected: make(map[int]struct{}),
-		gitlab:           gitlab,
+		gitlab:           nil, // Use nil for remote mode, handle in Update()
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -165,17 +162,172 @@ func StartWithRemoteProject(projectPath string) error {
 
 // getRemoteProjectPipelines gets pipelines for a remote GitLab project
 func getRemoteProjectPipelines(projectPath string) ([]core.Pipeline, error) {
-	// Use glab API to get pipelines for remote project
-	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/pipelines", url.QueryEscape(projectPath)))
-	_, err := cmd.Output()
+	fmt.Printf("📡 Fetching real pipelines for %s...\n", projectPath)
+
+	// Use glab pipeline list with remote project
+	cmd := exec.Command("glab", "pipeline", "list", "--repo", projectPath, "--limit", "20")
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get remote pipelines: %w", err)
+		fmt.Printf("❌ Failed to get pipelines: %v\n", err)
+		fmt.Println("💡 Make sure you're authenticated with 'glab auth login'")
+		fmt.Println("📝 Falling back to mock data for demonstration")
+		return core.GetMockPipelines(), nil
 	}
 
-	// TODO: Implement proper JSON parsing of GitLab API response
-	// For now, return mock data as fallback to demonstrate functionality
-	fmt.Println("📝 Note: Using mock data for now - real API parsing coming soon!")
-	return core.GetMockPipelines(), nil
+	// Parse glab pipeline list output
+	pipelines := parseGlabPipelineOutput(string(output))
+	if len(pipelines) == 0 {
+		fmt.Println("📝 No pipelines found, using mock data for demonstration")
+		return core.GetMockPipelines(), nil
+	}
+
+	fmt.Printf("✅ Loaded %d real pipelines from %s\n", len(pipelines), projectPath)
+	return pipelines, nil
+}
+
+// parseGlabPipelineOutput parses the output from 'glab pipeline list'
+func parseGlabPipelineOutput(output string) []core.Pipeline {
+	var pipelines []core.Pipeline
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "ID") || strings.HasPrefix(line, "--") {
+			continue
+		}
+
+		// Parse line format: ID STATUS REF CREATED
+		fields := strings.Fields(line)
+		if len(fields) >= 3 {
+			// Extract ID
+			idStr := fields[0]
+			if id, err := strconv.Atoi(idStr); err == nil {
+				pipeline := core.Pipeline{
+					ID:          id,
+					Status:      fields[1],
+					Ref:         fields[2],
+					ProjectName: "remote-project",
+					Jobs:        "loading...",
+					Duration:    "unknown",
+				}
+
+				// Add more fields if available
+				if len(fields) >= 4 {
+					pipeline.Duration = fields[3]
+				}
+
+				pipelines = append(pipelines, pipeline)
+			}
+		}
+	}
+
+	return pipelines
+}
+
+// getRemotePipelineJobs gets jobs for a pipeline in remote project
+func getRemotePipelineJobs(projectPath string, pipelineID int) ([]core.Job, error) {
+	fmt.Printf("📡 Fetching jobs for pipeline %d in %s...\n", pipelineID, projectPath)
+
+	// Use glab API to get pipeline jobs
+	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/pipelines/%d/jobs", url.QueryEscape(projectPath), pipelineID))
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get jobs: %w", err)
+	}
+
+	// Parse jobs from API response
+	jobs := parseJobsFromAPI(string(output))
+	return jobs, nil
+}
+
+// getRemoteJobLogs gets logs for a job in remote project
+func getRemoteJobLogs(projectPath string, jobID int) (string, error) {
+	fmt.Printf("📡 Fetching logs for job %d in %s...\n", jobID, projectPath)
+
+	// Use glab API to get job logs
+	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/jobs/%d/trace", url.QueryEscape(projectPath), jobID))
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get job logs: %w", err)
+	}
+
+	return string(output), nil
+}
+
+// parseJobsFromAPI parses jobs from GitLab API response
+func parseJobsFromAPI(jsonResponse string) []core.Job {
+	var jobs []core.Job
+
+	// Simple parsing - look for job objects
+	lines := strings.Split(jsonResponse, "\n")
+	var currentJob core.Job
+	inJob := false
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if strings.Contains(line, `"id":`) && !strings.Contains(line, `"pipeline_id":`) {
+			if id := extractNumber(line, `"id":`); id != 0 {
+				currentJob.ID = id
+				inJob = true
+			}
+		}
+
+		if strings.Contains(line, `"name":`) {
+			if name := extractString(line, `"name":`); name != "" {
+				currentJob.Name = name
+			}
+		}
+
+		if strings.Contains(line, `"status":`) {
+			if status := extractString(line, `"status":`); status != "" {
+				currentJob.Status = status
+			}
+		}
+
+		if strings.Contains(line, `"stage":`) {
+			if stage := extractString(line, `"stage":`); stage != "" {
+				currentJob.Stage = stage
+			}
+		}
+
+		// End of job object
+		if strings.Contains(line, "}") && inJob {
+			if currentJob.ID != 0 && currentJob.Name != "" {
+				jobs = append(jobs, currentJob)
+			}
+			currentJob = core.Job{}
+			inJob = false
+		}
+	}
+
+	return jobs
+}
+
+// extractNumber extracts a number from a JSON line
+func extractNumber(line, key string) int {
+	parts := strings.Split(line, key)
+	if len(parts) > 1 {
+		numPart := strings.TrimSpace(parts[1])
+		numPart = strings.Split(numPart, ",")[0]
+		numPart = strings.TrimSpace(numPart)
+		if num, err := strconv.Atoi(numPart); err == nil {
+			return num
+		}
+	}
+	return 0
+}
+
+// extractString extracts a string from a JSON line
+func extractString(line, key string) string {
+	parts := strings.Split(line, key)
+	if len(parts) > 1 {
+		strPart := strings.TrimSpace(parts[1])
+		strPart = strings.TrimPrefix(strPart, `"`)
+		strPart = strings.Split(strPart, `"`)[0]
+		return strPart
+	}
+	return ""
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -210,8 +362,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					// Handle demo mode (when gitlab is nil)
 					if m.gitlab == nil {
-						// Use mock jobs for demo
-						m.jobs = core.GetMockJobs()
+						// Check if this is remote mode (has real project path)
+						if strings.Contains(m.projectPath, "/") {
+							// Remote mode - fetch real jobs
+							jobs, err := getRemotePipelineJobs(m.projectPath, selectedPipeline.ID)
+							if err == nil {
+								m.jobs = jobs
+							} else {
+								// Fallback to mock jobs
+								m.jobs = core.GetMockJobs()
+							}
+						} else {
+							// Demo mode - use mock jobs
+							m.jobs = core.GetMockJobs()
+						}
 						m.jobCursor = 0
 						m.selectedPipelineID = selectedPipeline.ID
 						m.currentView = jobView
@@ -233,19 +397,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					// Handle demo mode (when gitlab is nil)
 					if m.gitlab == nil {
-						// Use mock logs for demo
-						m.logs = "🎯 Demo Mode - Mock Job Logs\n\n" +
-							"📋 Job: " + selectedJob.Name + "\n" +
-							"📊 Status: " + selectedJob.Status + "\n" +
-							"🏗️  Stage: " + selectedJob.Stage + "\n\n" +
-							"Sample log output:\n" +
-							"[INFO] Starting job execution...\n" +
-							"[INFO] Installing dependencies...\n" +
-							"[INFO] Running tests...\n" +
-							"[SUCCESS] All tests passed!\n" +
-							"[INFO] Job completed successfully\n\n" +
-							"💡 In real GitLab projects, you'd see actual job logs here.\n" +
-							"🔥 Use 'l' key for real-time streaming in live projects!"
+						// Check if this is remote mode
+						if strings.Contains(m.projectPath, "/") {
+							// Remote mode - fetch real logs
+							logs, err := getRemoteJobLogs(m.projectPath, selectedJob.ID)
+							if err == nil {
+								m.logs = logs
+							} else {
+								m.logs = fmt.Sprintf("❌ Failed to get logs for job %d: %v\n\n💡 This is a remote project.\nTry using: glab-tui logs %d", selectedJob.ID, err, selectedJob.ID)
+							}
+						} else {
+							// Demo mode - use mock logs
+							m.logs = "🎯 Demo Mode - Mock Job Logs\n\n" +
+								"📋 Job: " + selectedJob.Name + "\n" +
+								"📊 Status: " + selectedJob.Status + "\n" +
+								"🏗️  Stage: " + selectedJob.Stage + "\n\n" +
+								"Sample log output:\n" +
+								"[INFO] Starting job execution...\n" +
+								"[INFO] Installing dependencies...\n" +
+								"[INFO] Running tests...\n" +
+								"[SUCCESS] All tests passed!\n" +
+								"[INFO] Job completed successfully\n\n" +
+								"💡 In real GitLab projects, you'd see actual job logs here.\n" +
+								"🔥 Use 'l' key for real-time streaming in live projects!"
+						}
 						m.selectedJobID = selectedJob.ID
 						m.currentView = logView
 					} else {
