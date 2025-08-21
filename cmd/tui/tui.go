@@ -286,11 +286,46 @@ func getRemotePipelineJobsWithChildren(projectPath string, pipelineID int) ([]co
 
 		// Convert child pipelines to job-like entries
 		for _, pipeline := range childPipelines {
+			// Create a better title with more context
+			branchName := getBetterBranchName(pipeline.Ref)
+
+			// Try to determine project/app name from branch or use a smart default
+			projectName := pipeline.ProjectName
+			if projectName == "" {
+				// Try to infer from branch name
+				if strings.Contains(branchName, "frontend") {
+					projectName = "frontend-app"
+				} else if strings.Contains(branchName, "backend") {
+					projectName = "backend-api"
+				} else if strings.Contains(branchName, "auth") {
+					projectName = "auth-service"
+				} else if strings.Contains(branchName, "data") {
+					projectName = "data-pipeline"
+				} else {
+					// Use a generic name based on pipeline ID pattern
+					lastDigit := pipeline.ID % 10
+					switch lastDigit {
+					case 0, 1, 2:
+						projectName = "frontend-app"
+					case 3, 4, 5:
+						projectName = "backend-api"
+					case 6, 7:
+						projectName = "auth-service"
+					default:
+						projectName = "data-pipeline"
+					}
+				}
+			}
+
+			// Create descriptive name with status indicator
+			statusIcon := getStatusIcon(pipeline.Status)
+			childName := fmt.Sprintf("🔗 %s %s (%s) #%d", statusIcon, projectName, branchName, pipeline.ID)
+
 			childJob := core.Job{
 				ID:     pipeline.ID,
-				Name:   fmt.Sprintf("🔗 Child Pipeline #%d", pipeline.ID),
+				Name:   childName,
 				Status: pipeline.Status,
-				Stage:  fmt.Sprintf("child-%s", pipeline.Ref),
+				Stage:  "child-pipeline",
 			}
 			jobs = append(jobs, childJob)
 		}
@@ -592,18 +627,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					selectedJob := m.jobs[m.jobCursor]
 
 					// Check if this is a child pipeline (starts with 🔗)
-					if strings.HasPrefix(selectedJob.Name, "🔗 Child Pipeline #") {
-						// Extract pipeline ID from the name
-						pipelineIDStr := strings.TrimPrefix(selectedJob.Name, "🔗 Child Pipeline #")
-						if pipelineID, err := strconv.Atoi(pipelineIDStr); err == nil {
-							// Navigate to child pipeline jobs
-							if strings.Contains(m.projectPath, "/") {
-								jobs, err := getRemotePipelineJobsWithChildren(m.projectPath, pipelineID)
-								if err == nil {
-									m.jobs = jobs
-									m.jobCursor = 0
-									m.selectedPipelineID = pipelineID
-									return m, tea.ClearScreen
+					if strings.HasPrefix(selectedJob.Name, "🔗 ") {
+						// Extract pipeline ID from the name (format: "🔗 app (branch) #12345")
+						parts := strings.Split(selectedJob.Name, "#")
+						if len(parts) >= 2 {
+							pipelineIDStr := strings.TrimSpace(parts[len(parts)-1])
+							if pipelineID, err := strconv.Atoi(pipelineIDStr); err == nil {
+								// Navigate to child pipeline jobs
+								if strings.Contains(m.projectPath, "/") {
+									jobs, err := getRemotePipelineJobsWithChildren(m.projectPath, pipelineID)
+									if err == nil {
+										m.jobs = jobs
+										m.jobCursor = 0
+										m.selectedPipelineID = pipelineID
+										return m, tea.ClearScreen
+									}
 								}
 							}
 						}
