@@ -52,9 +52,19 @@ func Run() error {
 		return err
 	}
 
-	// Regular TUI mode
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
-	_, err := p.Run()
+	// ENHANCED TUI MODE (the new default!)
+	fmt.Println("🚀 ENHANCED GITLAB TUI - DOMINATION MODE!")
+	fmt.Println("⚡ Connecting to GitLab API...")
+
+	model, err := NewEnhancedTUI("theapsgroup/agility/frontend-apps")
+	if err != nil {
+		fmt.Printf("❌ Failed to initialize enhanced TUI: %v\n", err)
+		fmt.Println("💡 Make sure you're authenticated with 'glab auth login'")
+		return err
+	}
+
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	_, err = p.Run()
 	return err
 }
 

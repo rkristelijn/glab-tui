@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -23,14 +25,14 @@ type SpeedModeModel struct {
 
 // NewSpeedMode creates a new speed monitoring model
 func NewSpeedMode() SpeedModeModel {
-	// Pipeline Q's challenge targets
-	challengePipelines := []string{
-		"1997056394", "1997056277", "1997056042",
-		"1997055922", "1997055809", "1997047926",
+	// Latest jobs Pipeline Q is monitoring + challenge targets
+	latestJobs := []string{
+		"11099442002", "11099441955", "11099441920", // Latest jobs
+		"11099439598", "11099439587", "11099434107", // Pipeline Q's targets
 	}
 
 	return SpeedModeModel{
-		pipelines:   challengePipelines,
+		pipelines:   latestJobs,
 		statuses:    make(map[string]string),
 		wrapper:     gitlab.NewGlabWrapper("theapsgroup/agility/frontend-apps"),
 		autoRefresh: true,
@@ -192,22 +194,28 @@ func (m SpeedModeModel) fetchAllPipelines() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// fetchPipelineStatus fetches status for a single pipeline
-func (m SpeedModeModel) fetchPipelineStatus(pipelineID string) tea.Cmd {
+// fetchPipelineStatus fetches status for a single job
+func (m SpeedModeModel) fetchPipelineStatus(jobID string) tea.Cmd {
 	return func() tea.Msg {
-		// Use glab API directly for speed
-		status := "checking..."
-
-		// Quick status check - we'll improve this
-		if pipelineID == "1997047926" {
-			status = "running (parent)"
-		} else {
-			status = "running (child)"
+		// Use glab API to get job status
+		cmd := exec.Command("glab", "api", fmt.Sprintf("jobs/%s", jobID), "-R", "theapsgroup/agility/frontend-apps")
+		output, err := cmd.Output()
+		if err != nil {
+			return speedUpdateMsg{pipeline: jobID, status: "error: " + err.Error()}
 		}
 
-		return speedUpdateMsg{
-			pipeline: pipelineID,
-			status:   status,
+		// Parse JSON response
+		var job struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Stage  string `json:"stage"`
 		}
+
+		if err := json.Unmarshal(output, &job); err != nil {
+			return speedUpdateMsg{pipeline: jobID, status: "parse error"}
+		}
+
+		status := fmt.Sprintf("%s - %s (%s)", job.Name, job.Status, job.Stage)
+		return speedUpdateMsg{pipeline: jobID, status: status}
 	}
 }
