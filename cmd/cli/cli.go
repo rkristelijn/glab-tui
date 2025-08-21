@@ -324,33 +324,91 @@ func checkJob(jobIDStr string) {
 
 	fmt.Printf("Checking job %d...\n", jobID)
 
-	cfg, err := config.Load()
+	// Try to get current project from git context
+	projectPath, err := getCurrentProjectPath()
 	if err != nil {
-		fmt.Printf("Failed to load config: %v\n", err)
+		fmt.Printf("❌ Could not detect GitLab project: %v\n", err)
+		fmt.Println("💡 Make sure you're in a GitLab repository")
 		os.Exit(1)
 	}
 
-	if cfg.GitLab.Token == "" || cfg.GitLab.Token == "your-token-here" {
-		fmt.Println("❌ No GitLab token found!")
-		fmt.Println("Please set GITLAB_TOKEN in your .env file")
-		fmt.Println("Get your token from: https://gitlab.com/-/profile/personal_access_tokens")
-		os.Exit(1)
-	}
+	fmt.Printf("📊 Project: %s\n", projectPath)
 
-	client, err := gitlab.NewClient(cfg)
+	// Use glab command to get job details
+	cmd := exec.Command("glab", "api", fmt.Sprintf("jobs/%d", jobID))
+	output, err := cmd.Output()
 	if err != nil {
-		fmt.Printf("Failed to create GitLab client: %v\n", err)
+		// Check if it's a 404 (job not found) vs auth issue
+		if strings.Contains(string(output), "404 Not Found") {
+			fmt.Printf("❌ Job %d not found\n", jobID)
+			fmt.Println("💡 Make sure the job ID is correct and from the current project")
+		} else {
+			fmt.Printf("❌ Failed to get job details: %v\n", err)
+			fmt.Println("💡 Make sure you're authenticated with 'glab auth login'")
+		}
 		os.Exit(1)
 	}
 
-	service := core.NewService(cfg, client)
-	status, err := service.GetJobStatus(jobID)
+	// Parse the JSON response to extract key info
+	jobInfo, err := parseJobJSON(string(output))
 	if err != nil {
-		fmt.Printf("❌ Failed to get job status: %v\n", err)
+		fmt.Printf("❌ Failed to parse job data: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("✅ Job %d status: %s\n", jobID, status)
+	// Display job information
+	fmt.Printf("✅ Job %d details:\n", jobID)
+	fmt.Printf("   Name: %s\n", jobInfo.Name)
+	fmt.Printf("   Status: %s\n", jobInfo.Status)
+	fmt.Printf("   Stage: %s\n", jobInfo.Stage)
+	if jobInfo.Duration != "" {
+		fmt.Printf("   Duration: %s\n", jobInfo.Duration)
+	}
+}
+
+// Simple JSON parser for job info
+func parseJobJSON(jsonStr string) (core.Job, error) {
+	// For now, use a simple approach to extract key fields
+	// In a production version, we'd use proper JSON parsing
+
+	job := core.Job{}
+
+	// Extract name
+	if nameStart := strings.Index(jsonStr, `"name":"`); nameStart != -1 {
+		nameStart += 8
+		if nameEnd := strings.Index(jsonStr[nameStart:], `"`); nameEnd != -1 {
+			job.Name = jsonStr[nameStart : nameStart+nameEnd]
+		}
+	}
+
+	// Extract status
+	if statusStart := strings.Index(jsonStr, `"status":"`); statusStart != -1 {
+		statusStart += 10
+		if statusEnd := strings.Index(jsonStr[statusStart:], `"`); statusEnd != -1 {
+			job.Status = jsonStr[statusStart : statusStart+statusEnd]
+		}
+	}
+
+	// Extract stage
+	if stageStart := strings.Index(jsonStr, `"stage":"`); stageStart != -1 {
+		stageStart += 9
+		if stageEnd := strings.Index(jsonStr[stageStart:], `"`); stageEnd != -1 {
+			job.Stage = jsonStr[stageStart : stageStart+stageEnd]
+		}
+	}
+
+	// Extract duration if available
+	if durationStart := strings.Index(jsonStr, `"duration":`); durationStart != -1 {
+		durationStart += 11
+		if durationEnd := strings.Index(jsonStr[durationStart:], `,`); durationEnd != -1 {
+			durationStr := jsonStr[durationStart : durationStart+durationEnd]
+			if durationStr != "null" {
+				job.Duration = durationStr + "s"
+			}
+		}
+	}
+
+	return job, nil
 }
 
 func showJobLogs(jobIDStr string) {
