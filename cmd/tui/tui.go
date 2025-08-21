@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -44,19 +43,8 @@ var (
 )
 
 func Run() error {
-	// Check for SPEED MODE challenge
-	if len(os.Args) > 1 && os.Args[1] == "speed" {
-		fmt.Println("🔥 SPEED CHALLENGE MODE ACTIVATED!")
-		fmt.Println("⚡ Monitoring Pipeline Q's challenge targets...")
-
-		p := tea.NewProgram(NewSpeedMode(), tea.WithAltScreen())
-		_, err := p.Run()
-		return err
-	}
-
-	// ENHANCED TUI MODE (the new default!)
-	fmt.Println("🚀 ENHANCED GITLAB TUI - DOMINATION MODE!")
-	fmt.Println("⚡ Connecting to GitLab API...")
+	fmt.Println("🚀 GitLab TUI - Pipeline Monitor")
+	fmt.Println("⚡ Loading pipeline data...")
 
 	// Auto-detect current project
 	projectPath, err := getCurrentProjectPath()
@@ -66,13 +54,7 @@ func Run() error {
 		return err
 	}
 
-	model, err := NewEnhancedTUI(projectPath)
-	if err != nil {
-		fmt.Printf("❌ Failed to initialize enhanced TUI: %v\n", err)
-		fmt.Println("💡 Make sure you're authenticated with 'glab auth login'")
-		return err
-	}
-
+	model := initialModel(projectPath)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err = p.Run()
 	return err
@@ -89,6 +71,7 @@ const (
 type model struct {
 	// View state
 	currentView viewMode
+	projectPath string
 
 	// Pipeline view
 	pipelines        []core.Pipeline
@@ -108,23 +91,7 @@ type model struct {
 	gitlab *gitlab.GlabWrapper
 }
 
-func initialModel() model {
-	// Try to get current project from git context
-	projectPath, err := getCurrentProjectPath()
-	if err != nil {
-		// Fall back to mock data
-		return model{
-			currentView:      pipelineView,
-			pipelines:        core.GetMockPipelines(),
-			pipelineCursor:   0,
-			pipelineSelected: make(map[int]struct{}),
-			gitlab:           gitlab.NewGlabWrapper("mock-project"),
-		}
-	}
-
-	// Create GitLab wrapper with detected project
-	wrapper := gitlab.NewGlabWrapper(projectPath)
-
+func initialModel(projectPath string) model {
 	// Try to get real data using the same approach as CLI
 	pipelines, err := getProjectPipelinesViaGlab(projectPath)
 	if err != nil {
@@ -134,16 +101,220 @@ func initialModel() model {
 
 	return model{
 		currentView:      pipelineView,
+		projectPath:      projectPath,
 		pipelines:        pipelines,
 		pipelineCursor:   0,
 		pipelineSelected: make(map[int]struct{}),
-		gitlab:           wrapper,
+		gitlab:           gitlab.NewGlabWrapper(projectPath),
 	}
 }
 
-// Add the same helper functions from CLI
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "esc":
+			// Go back to previous view
+			switch m.currentView {
+			case jobView:
+				m.currentView = pipelineView
+			case logView:
+				m.currentView = jobView
+			}
+		case "r":
+			// Refresh pipelines
+			if m.currentView == pipelineView {
+				pipelines, err := getProjectPipelinesViaGlab(m.projectPath)
+				if err == nil {
+					m.pipelines = pipelines
+				}
+			}
+		case "enter":
+			// Drill down to next view
+			switch m.currentView {
+			case pipelineView:
+				// Enter pipeline -> show jobs
+				if m.pipelineCursor < len(m.pipelines) {
+					selectedPipeline := m.pipelines[m.pipelineCursor]
+					jobs, err := m.gitlab.GetPipelineJobs(selectedPipeline.ID)
+					if err == nil {
+						m.jobs = jobs
+						m.jobCursor = 0
+						m.selectedPipelineID = selectedPipeline.ID
+						m.currentView = jobView
+					}
+				}
+			case jobView:
+				// Enter job -> show logs
+				if m.jobCursor < len(m.jobs) {
+					selectedJob := m.jobs[m.jobCursor]
+					logs, err := m.gitlab.GetJobLogs(selectedJob.ID)
+					if err == nil {
+						m.logs = logs
+						m.selectedJobID = selectedJob.ID
+						m.currentView = logView
+					}
+				}
+			}
+		case "up", "k":
+			switch m.currentView {
+			case pipelineView:
+				if m.pipelineCursor > 0 {
+					m.pipelineCursor--
+				}
+			case jobView:
+				if m.jobCursor > 0 {
+					m.jobCursor--
+				}
+			}
+		case "down", "j":
+			switch m.currentView {
+			case pipelineView:
+				if m.pipelineCursor < len(m.pipelines)-1 {
+					m.pipelineCursor++
+				}
+			case jobView:
+				if m.jobCursor < len(m.jobs)-1 {
+					m.jobCursor++
+				}
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m model) View() string {
+	// Title bar
+	title := titleStyle.Render("🚀 GitLab TUI - " + getProjectName(m.projectPath))
+
+	switch m.currentView {
+	case pipelineView:
+		return m.renderPipelineView(title)
+	case jobView:
+		return m.renderJobView(title)
+	case logView:
+		return m.renderLogView(title)
+	default:
+		return m.renderPipelineView(title)
+	}
+}
+
+func (m model) renderPipelineView(title string) string {
+	header := headerStyle.Render("Pipelines")
+
+	s := title + "\n"
+	s += header + "                                                     [r] Refresh\n\n"
+
+	// Pipeline list
+	for i, pipeline := range m.pipelines {
+		cursor := "  "
+		if m.pipelineCursor == i {
+			cursor = "> "
+		}
+
+		status := getStatusIcon(pipeline.Status)
+		statusStyled := getStyledStatus(pipeline.Status, status)
+
+		line := fmt.Sprintf("%s%s #%d  %-10s %-15s %-20s %s",
+			cursor, statusStyled, pipeline.ID, pipeline.Status, pipeline.ProjectName, pipeline.Ref, pipeline.Jobs)
+
+		if m.pipelineCursor == i {
+			line = selectedStyle.Render(line)
+		}
+
+		s += line + "\n"
+	}
+
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Enter: view jobs | j/k: navigate | r: refresh | q: quit")
+	return s
+}
+
+func (m model) renderJobView(title string) string {
+	header := headerStyle.Render(fmt.Sprintf("Jobs (Pipeline #%d)", m.selectedPipelineID))
+
+	s := title + "\n"
+	s += header + "\n\n"
+
+	// Job list
+	for i, job := range m.jobs {
+		cursor := "  "
+		if m.jobCursor == i {
+			cursor = "> "
+		}
+
+		status := getStatusIcon(job.Status)
+		statusStyled := getStyledStatus(job.Status, status)
+
+		line := fmt.Sprintf("%s%s %-25s %-10s %-15s",
+			cursor, statusStyled, job.Name, job.Status, job.Stage)
+
+		if m.jobCursor == i {
+			line = selectedStyle.Render(line)
+		}
+
+		s += line + "\n"
+	}
+
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Enter: view logs | Esc: back | j/k: navigate")
+	return s
+}
+
+func (m model) renderLogView(title string) string {
+	header := headerStyle.Render(fmt.Sprintf("Logs (Job #%d)", m.selectedJobID))
+
+	s := title + "\n"
+	s += header + "\n\n"
+
+	// Show logs (truncated for display)
+	logLines := strings.Split(m.logs, "\n")
+	maxLines := 20 // Show last 20 lines
+	startLine := 0
+	if len(logLines) > maxLines {
+		startLine = len(logLines) - maxLines
+	}
+
+	for i := startLine; i < len(logLines) && i < startLine+maxLines; i++ {
+		s += logLines[i] + "\n"
+	}
+
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Esc: back to jobs")
+	return s
+}
+
+func getStatusIcon(status string) string {
+	switch status {
+	case "running":
+		return "●"
+	case "success":
+		return "✓"
+	case "failed":
+		return "✗"
+	default:
+		return "○"
+	}
+}
+
+func getStyledStatus(status, icon string) string {
+	switch status {
+	case "running":
+		return runningStyle.Render(icon)
+	case "success":
+		return successStyle.Render(icon)
+	case "failed":
+		return failedStyle.Render(icon)
+	default:
+		return pendingStyle.Render(icon)
+	}
+}
+
+// Helper functions (same as CLI)
 func getCurrentProjectPath() (string, error) {
-	// Get the remote URL
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	output, err := cmd.Output()
 	if err != nil {
@@ -152,17 +323,13 @@ func getCurrentProjectPath() (string, error) {
 
 	remoteURL := strings.TrimSpace(string(output))
 
-	// Parse GitLab project path from URL
 	if strings.Contains(remoteURL, "gitlab") {
-		// Extract project path from GitLab URL
 		if strings.HasPrefix(remoteURL, "git@") {
-			// SSH format: git@gitlab.com:group/project.git
 			parts := strings.Split(remoteURL, ":")
 			if len(parts) >= 2 {
 				return strings.TrimSuffix(parts[1], ".git"), nil
 			}
 		} else if strings.HasPrefix(remoteURL, "https://") {
-			// HTTPS format: https://gitlab.com/group/project.git
 			parts := strings.Split(remoteURL, "/")
 			if len(parts) >= 4 {
 				projectPath := strings.Join(parts[3:], "/")
@@ -175,20 +342,13 @@ func getCurrentProjectPath() (string, error) {
 }
 
 func getProjectPipelinesViaGlab(projectPath string) ([]core.Pipeline, error) {
-	// Use glab command to get pipeline data
 	cmd := exec.Command("glab", "pipeline", "list")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("glab command failed: %w", err)
 	}
 
-	// Parse the text output
-	pipelines, err := parseGlabPipelineText(string(output))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse glab output: %w", err)
-	}
-
-	return pipelines, nil
+	return parseGlabPipelineText(string(output))
 }
 
 func parseGlabPipelineText(output string) ([]core.Pipeline, error) {
@@ -202,7 +362,6 @@ func parseGlabPipelineText(output string) ([]core.Pipeline, error) {
 			parts := strings.Split(line, " on ")
 			if len(parts) > 1 {
 				fullPath := strings.TrimSuffix(parts[1], ". (Page 1)")
-				// Extract just the project name from the full path
 				pathParts := strings.Split(fullPath, "/")
 				if len(pathParts) > 0 {
 					projectName = pathParts[len(pathParts)-1]
@@ -219,7 +378,6 @@ func parseGlabPipelineText(output string) ([]core.Pipeline, error) {
 			continue
 		}
 
-		// Parse lines like: "(running) • #1997196243	(#6866)	refs/merge-requests/406/head	(less than a minute ago)"
 		if strings.Contains(line, "#") {
 			pipeline := parsePipelineLine(line, projectName)
 			if pipeline.ID != 0 {
@@ -291,213 +449,10 @@ func parsePipelineLine(line, projectName string) core.Pipeline {
 	}
 }
 
-func (m model) Init() tea.Cmd {
-	return nil
-}
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "esc":
-			// Go back to previous view
-			switch m.currentView {
-			case jobView:
-				m.currentView = pipelineView
-			case logView:
-				m.currentView = jobView
-			}
-		case "enter":
-			// Drill down to next view
-			switch m.currentView {
-			case pipelineView:
-				// Enter pipeline -> show jobs
-				if m.pipelineCursor < len(m.pipelines) {
-					selectedPipeline := m.pipelines[m.pipelineCursor]
-					jobs, err := m.gitlab.GetPipelineJobs(selectedPipeline.ID)
-					if err == nil {
-						m.jobs = jobs
-						m.jobCursor = 0
-						m.selectedPipelineID = selectedPipeline.ID
-						m.currentView = jobView
-					}
-				}
-			case jobView:
-				// Enter job -> show logs
-				if m.jobCursor < len(m.jobs) {
-					selectedJob := m.jobs[m.jobCursor]
-					logs, err := m.gitlab.GetJobLogs(selectedJob.ID)
-					if err == nil {
-						m.logs = logs
-						m.selectedJobID = selectedJob.ID
-						m.currentView = logView
-					}
-				}
-			}
-		case "up", "k":
-			switch m.currentView {
-			case pipelineView:
-				if m.pipelineCursor > 0 {
-					m.pipelineCursor--
-				}
-			case jobView:
-				if m.jobCursor > 0 {
-					m.jobCursor--
-				}
-			}
-		case "down", "j":
-			switch m.currentView {
-			case pipelineView:
-				if m.pipelineCursor < len(m.pipelines)-1 {
-					m.pipelineCursor++
-				}
-			case jobView:
-				if m.jobCursor < len(m.jobs)-1 {
-					m.jobCursor++
-				}
-			}
-		case " ":
-			// Toggle selection (only in pipeline view)
-			if m.currentView == pipelineView {
-				_, ok := m.pipelineSelected[m.pipelineCursor]
-				if ok {
-					delete(m.pipelineSelected, m.pipelineCursor)
-				} else {
-					m.pipelineSelected[m.pipelineCursor] = struct{}{}
-				}
-			}
-		}
+func getProjectName(projectPath string) string {
+	parts := strings.Split(projectPath, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
 	}
-	return m, nil
-}
-
-func (m model) View() string {
-	// Title bar
-	title := titleStyle.Render("🚀 GitLab TUI - glab-tui")
-
-	switch m.currentView {
-	case pipelineView:
-		return m.renderPipelineView(title)
-	case jobView:
-		return m.renderJobView(title)
-	case logView:
-		return m.renderLogView(title)
-	default:
-		return m.renderPipelineView(title)
-	}
-}
-
-func (m model) renderPipelineView(title string) string {
-	header := headerStyle.Render("Pipelines")
-
-	s := title + "\n"
-	s += header + "                                                     ↻ Auto-refresh\n\n"
-
-	// Pipeline list
-	for i, pipeline := range m.pipelines {
-		cursor := "  "
-		if m.pipelineCursor == i {
-			cursor = "> "
-		}
-
-		checked := " "
-		if _, ok := m.pipelineSelected[i]; ok {
-			checked = "x"
-		}
-
-		status := getStatusIcon(pipeline.Status)
-		statusStyled := getStyledStatus(pipeline.Status, status)
-
-		line := fmt.Sprintf("%s[%s] %s #%d  %-10s %-15s %-20s %s",
-			cursor, checked, statusStyled, pipeline.ID, pipeline.Status, pipeline.ProjectName, pipeline.Ref, pipeline.Jobs)
-
-		if m.pipelineCursor == i {
-			line = selectedStyle.Render(line)
-		}
-
-		s += line + "\n"
-	}
-
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Press Enter to view jobs, j/k to navigate, space to select, q to quit")
-	return s
-}
-
-func (m model) renderJobView(title string) string {
-	header := headerStyle.Render(fmt.Sprintf("Jobs (Pipeline #%d)", m.selectedPipelineID))
-
-	s := title + "\n"
-	s += header + "\n\n"
-
-	// Job list
-	for i, job := range m.jobs {
-		cursor := "  "
-		if m.jobCursor == i {
-			cursor = "> "
-		}
-
-		status := getStatusIcon(job.Status)
-		statusStyled := getStyledStatus(job.Status, status)
-
-		line := fmt.Sprintf("%s%s %-25s %-10s %-15s",
-			cursor, statusStyled, job.Name, job.Status, job.Stage)
-
-		if m.jobCursor == i {
-			line = selectedStyle.Render(line)
-		}
-
-		s += line + "\n"
-	}
-
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Press Enter to view logs, Esc to go back, j/k to navigate")
-	return s
-}
-
-func (m model) renderLogView(title string) string {
-	header := headerStyle.Render(fmt.Sprintf("Logs (Job #%d)", m.selectedJobID))
-
-	s := title + "\n"
-	s += header + "\n\n"
-
-	// Show logs (truncated for display)
-	logLines := strings.Split(m.logs, "\n")
-	maxLines := 20 // Show last 20 lines
-	startLine := 0
-	if len(logLines) > maxLines {
-		startLine = len(logLines) - maxLines
-	}
-
-	for i := startLine; i < len(logLines) && i < startLine+maxLines; i++ {
-		s += logLines[i] + "\n"
-	}
-
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Press Esc to go back, logs auto-refresh for running jobs")
-	return s
-}
-
-func getStatusIcon(status string) string {
-	switch status {
-	case "running":
-		return "●"
-	case "success":
-		return "✓"
-	case "failed":
-		return "✗"
-	default:
-		return "○"
-	}
-}
-
-func getStyledStatus(status, icon string) string {
-	switch status {
-	case "running":
-		return runningStyle.Render(icon)
-	case "success":
-		return successStyle.Render(icon)
-	case "failed":
-		return failedStyle.Render(icon)
-	default:
-		return pendingStyle.Render(icon)
-	}
+	return "project"
 }

@@ -33,7 +33,7 @@ token := strings.TrimPrefix(host.Token, "!!null ")
 func detectProjectFromContext() string {
     // Try git remote
     // Fall back to explicit path
-    return "theapsgroup/agility/frontend-apps"
+    return "example-org/sample-project"
 }
 ```
 
