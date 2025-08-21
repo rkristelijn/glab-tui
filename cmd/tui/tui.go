@@ -286,40 +286,23 @@ func getRemotePipelineJobsWithChildren(projectPath string, pipelineID int) ([]co
 
 		// Convert child pipelines to job-like entries
 		for _, pipeline := range childPipelines {
-			// Create a better title with more context
-			branchName := getBetterBranchName(pipeline.Ref)
-
-			// Try to determine project/app name from branch or use a smart default
-			projectName := pipeline.ProjectName
-			if projectName == "" {
-				// Try to infer from branch name
+			// Use the real app name from logs if available
+			appName := pipeline.ProjectName
+			if appName == "" {
+				// Fallback to smart detection if no app name from logs
+				branchName := getBetterBranchName(pipeline.Ref)
 				if strings.Contains(branchName, "frontend") {
-					projectName = "frontend-app"
+					appName = "frontend-app"
 				} else if strings.Contains(branchName, "backend") {
-					projectName = "backend-api"
-				} else if strings.Contains(branchName, "auth") {
-					projectName = "auth-service"
-				} else if strings.Contains(branchName, "data") {
-					projectName = "data-pipeline"
+					appName = "backend-api"
 				} else {
-					// Use a generic name based on pipeline ID pattern
-					lastDigit := pipeline.ID % 10
-					switch lastDigit {
-					case 0, 1, 2:
-						projectName = "frontend-app"
-					case 3, 4, 5:
-						projectName = "backend-api"
-					case 6, 7:
-						projectName = "auth-service"
-					default:
-						projectName = "data-pipeline"
-					}
+					appName = "unknown-app"
 				}
 			}
 
-			// Create descriptive name with status indicator
+			// Create descriptive name with status indicator and real app name
 			statusIcon := getStatusIcon(pipeline.Status)
-			childName := fmt.Sprintf("🔗 %s %s (%s) #%d", statusIcon, projectName, branchName, pipeline.ID)
+			childName := fmt.Sprintf("🔗 %s %s #%d", statusIcon, appName, pipeline.ID)
 
 			childJob := core.Job{
 				ID:     pipeline.ID,
@@ -336,7 +319,13 @@ func getRemotePipelineJobsWithChildren(projectPath string, pipelineID int) ([]co
 
 // getRecentChildPipelines tries to find child pipelines by looking for recent pipelines
 func getRecentChildPipelines(projectPath string, parentPipelineID int) ([]core.Pipeline, error) {
-	// Get recent pipelines that might be children
+	// First try to get child pipeline info from parent job logs
+	childPipelinesFromLogs, err := getChildPipelinesFromLogs(projectPath, parentPipelineID)
+	if err == nil && len(childPipelinesFromLogs) > 0 {
+		return childPipelinesFromLogs, nil
+	}
+
+	// Fallback to heuristic method
 	cmd := exec.Command("glab", "ci", "list", "--repo", projectPath, "--per-page", "20")
 	output, err := cmd.Output()
 	if err != nil {
@@ -347,8 +336,6 @@ func getRecentChildPipelines(projectPath string, parentPipelineID int) ([]core.P
 	var childPipelines []core.Pipeline
 
 	// Look for pipelines created after the parent pipeline
-	// This is a heuristic - in a real implementation you'd use the GitLab API
-	// to find actual downstream relationships
 	for _, pipeline := range allPipelines {
 		// Skip the parent pipeline itself
 		if pipeline.ID == parentPipelineID {
@@ -357,7 +344,6 @@ func getRecentChildPipelines(projectPath string, parentPipelineID int) ([]core.P
 
 		// If pipeline ID is higher (newer) and from similar timeframe, it might be a child
 		if pipeline.ID > parentPipelineID && pipeline.ID < parentPipelineID+50000 {
-			// Additional heuristic: if it's from the same branch or similar
 			childPipelines = append(childPipelines, pipeline)
 		}
 	}
@@ -368,6 +354,83 @@ func getRecentChildPipelines(projectPath string, parentPipelineID int) ([]core.P
 	}
 
 	return childPipelines, nil
+}
+
+// getChildPipelinesFromLogs extracts child pipeline info from parent job logs
+func getChildPipelinesFromLogs(projectPath string, parentPipelineID int) ([]core.Pipeline, error) {
+	// Get jobs for the parent pipeline
+	jobs, err := getRemotePipelineJobs(projectPath, parentPipelineID)
+	if err != nil {
+		return nil, err
+	}
+
+	var childPipelines []core.Pipeline
+
+	// Look for the nx-mono-repo-affected job or similar trigger job
+	for _, job := range jobs {
+		if strings.Contains(job.Name, "mono-repo") || strings.Contains(job.Name, "affected") {
+			// Get logs for this job
+			logs, err := getRemoteJobLogs(projectPath, job.ID)
+			if err != nil {
+				continue
+			}
+
+			// Parse logs for triggered pipeline information
+			childPipelines = parseTriggeredPipelinesFromLogs(logs)
+			if len(childPipelines) > 0 {
+				break
+			}
+		}
+	}
+
+	return childPipelines, nil
+}
+
+// parseTriggeredPipelinesFromLogs parses logs to find triggered child pipelines
+func parseTriggeredPipelinesFromLogs(logs string) []core.Pipeline {
+	var childPipelines []core.Pipeline
+	lines := strings.Split(logs, "\n")
+
+	for _, line := range lines {
+		// Look for lines like: "▶️ Triggered pipeline for internal-demo-application on path apps/internal-demo-application: https://gitlab.com/theapsgroup/agility/frontend-apps/-/pipelines/1997363434"
+		if strings.Contains(line, "▶️ Triggered pipeline for") && strings.Contains(line, "https://") {
+			// Extract app name and pipeline ID
+			parts := strings.Split(line, " ")
+			var appName string
+			var pipelineID int
+
+			// Find app name (after "for" and before "on")
+			for i, part := range parts {
+				if part == "for" && i+1 < len(parts) {
+					appName = parts[i+1]
+					break
+				}
+			}
+
+			// Extract pipeline ID from URL
+			if urlStart := strings.Index(line, "https://"); urlStart != -1 {
+				url := line[urlStart:]
+				if pipelineStart := strings.LastIndex(url, "/"); pipelineStart != -1 {
+					pipelineIDStr := url[pipelineStart+1:]
+					if id, err := strconv.Atoi(pipelineIDStr); err == nil {
+						pipelineID = id
+					}
+				}
+			}
+
+			if appName != "" && pipelineID != 0 {
+				childPipeline := core.Pipeline{
+					ID:          pipelineID,
+					ProjectName: appName,
+					Ref:         "triggered", // We don't have branch info from logs
+					Status:      "running",   // Assume running initially
+				}
+				childPipelines = append(childPipelines, childPipeline)
+			}
+		}
+	}
+
+	return childPipelines
 }
 func getRemotePipelineJobs(projectPath string, pipelineID int) ([]core.Job, error) {
 	fmt.Printf("📡 Fetching jobs for pipeline %d in %s...\n", pipelineID, projectPath)
