@@ -124,6 +124,35 @@ func (g *GlabWrapper) GetJobLogs(jobID int) (string, error) {
 
 	return string(output), nil
 }
+
+// GetJobStatus fetches the current status of a job using glab CLI
+func (g *GlabWrapper) GetJobStatus(jobID int) (string, error) {
+	// Use glab API to get job status
+	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/jobs/%d", strings.ReplaceAll(g.projectPath, "/", "%2F"), jobID))
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get job status: %w", err)
+	}
+
+	// Parse JSON to extract status
+	jobData := string(output)
+
+	// Simple JSON parsing to extract status field
+	// Look for "status":"value" pattern
+	statusStart := strings.Index(jobData, `"status":"`)
+	if statusStart == -1 {
+		return "unknown", nil
+	}
+
+	statusStart += len(`"status":"`)
+	statusEnd := strings.Index(jobData[statusStart:], `"`)
+	if statusEnd == -1 {
+		return "unknown", nil
+	}
+
+	status := jobData[statusStart : statusStart+statusEnd]
+	return status, nil
+}
 func ParseGlabPipelineList(output string) ([]core.Pipeline, error) {
 	lines := strings.Split(output, "\n")
 	var pipelines []core.Pipeline

@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/rkristelijn/glab-tui/internal/config"
 	"github.com/rkristelijn/glab-tui/internal/core"
@@ -31,10 +34,36 @@ func Run(args []string) {
 		checkJob(args[1])
 	case "logs", "l":
 		if len(args) < 2 {
-			fmt.Println("Usage: glab-tui logs <job-id>")
+			fmt.Println("Usage: glab-tui logs [--follow] <job-id>")
+			fmt.Println("  --follow, -f    Stream logs in real-time")
 			os.Exit(1)
 		}
-		showJobLogs(args[1])
+
+		// Parse flags and job ID
+		var follow bool
+		var jobIDStr string
+
+		for i := 1; i < len(args); i++ {
+			arg := args[i]
+			if arg == "--follow" || arg == "-f" {
+				follow = true
+			} else if !strings.HasPrefix(arg, "-") {
+				jobIDStr = arg
+				break
+			}
+		}
+
+		if jobIDStr == "" {
+			fmt.Println("Error: job ID required")
+			fmt.Println("Usage: glab-tui logs [--follow] <job-id>")
+			os.Exit(1)
+		}
+
+		if follow {
+			streamJobLogs(jobIDStr)
+		} else {
+			showJobLogs(jobIDStr)
+		}
 	case "test-real":
 		testRealGitLab()
 	case "help", "h", "--help":
@@ -412,6 +441,91 @@ func parseJobJSON(jsonStr string) (core.Job, error) {
 	return job, nil
 }
 
+func streamJobLogs(jobIDStr string) {
+	jobID, err := strconv.Atoi(jobIDStr)
+	if err != nil {
+		fmt.Printf("Invalid job ID: %s\n", jobIDStr)
+		os.Exit(1)
+	}
+
+	// Auto-detect current project
+	projectPath, err := getCurrentProjectPath()
+	if err != nil {
+		fmt.Printf("❌ Could not detect GitLab project: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("🔄 Streaming logs for job %d (Ctrl+C to exit)...\n", jobID)
+	fmt.Println("─────────────────────────────────────────────────")
+
+	wrapper := gitlab.NewGlabWrapper(projectPath)
+
+	// Track last log position to avoid duplicates
+	var lastLogSize int64 = 0
+
+	// Setup signal handling for graceful exit
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Create ticker for polling
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	// Initial log fetch
+	logs, err := wrapper.GetJobLogs(jobID)
+	if err != nil {
+		fmt.Printf("❌ Failed to get job logs: %v\n", err)
+		os.Exit(1)
+	}
+
+	if logs != "" {
+		fmt.Print(logs)
+		lastLogSize = int64(len(logs))
+	}
+
+	// Check initial job status
+	jobStatus, err := wrapper.GetJobStatus(jobID)
+	if err == nil && (jobStatus == "success" || jobStatus == "failed" || jobStatus == "canceled") {
+		fmt.Printf("\n─────────────────────────────────────────────────\n")
+		fmt.Printf("✅ Job %d completed with status: %s\n", jobID, jobStatus)
+		return
+	}
+
+	for {
+		select {
+		case <-sigChan:
+			fmt.Printf("\n─────────────────────────────────────────────────\n")
+			fmt.Printf("🛑 Log streaming stopped\n")
+			return
+
+		case <-ticker.C:
+			// Get current logs
+			currentLogs, err := wrapper.GetJobLogs(jobID)
+			if err != nil {
+				fmt.Printf("\n❌ Error fetching logs: %v\n", err)
+				continue
+			}
+
+			// Check if there are new logs
+			currentSize := int64(len(currentLogs))
+			if currentSize > lastLogSize {
+				// Print only new content
+				newContent := currentLogs[lastLogSize:]
+				fmt.Print(newContent)
+				lastLogSize = currentSize
+			}
+
+			// Check job status
+			jobStatus, err := wrapper.GetJobStatus(jobID)
+			if err == nil && (jobStatus == "success" || jobStatus == "failed" || jobStatus == "canceled") {
+				fmt.Printf("\n─────────────────────────────────────────────────\n")
+				fmt.Printf("✅ Job %d completed with status: %s\n", jobID, jobStatus)
+				return
+			}
+		}
+	}
+}
+
 func showJobLogs(jobIDStr string) {
 	jobID, err := strconv.Atoi(jobIDStr)
 	if err != nil {
@@ -481,7 +595,8 @@ USAGE:
 COMMANDS:
     pipelines, p               List pipelines
     job, j <job-id>           Check specific job status
-    logs, l <job-id>          Show job logs
+    logs, l [--follow] <job-id>  Show job logs
+        --follow, -f          🔥 Stream logs in real-time
     test-real                 Test GitLab API connection
     speed                     🔥 Speed challenge mode
     help, h                   Show this help
@@ -492,7 +607,9 @@ EXAMPLES:
     glab-tui speed                    # 🔥 CHALLENGE MODE
     glab-tui pipelines                # List pipelines in CLI
     glab-tui job 11098249149         # Check specific job
-    glab-tui logs 11098249149        # Show job logs
+    glab-tui logs 11098249149        # Show job logs (static)
+    glab-tui logs --follow 11098249149  # 🔥 Stream logs in real-time
+    glab-tui logs -f 11098249149     # 🔥 Stream logs (short flag)
     glab-tui test-real               # Test GitLab connection
     glab-tui help                    # Show help`)
 }
