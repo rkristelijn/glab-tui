@@ -623,24 +623,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	// Clear screen and reset cursor
-	result := "\033[2J\033[H"
-
 	// Title bar
 	title := titleStyle.Render("🚀 GitLab TUI - " + getProjectName(m.projectPath))
 
 	switch m.currentView {
 	case pipelineView:
-		result += m.renderPipelineView(title)
+		return m.renderPipelineView(title)
 	case jobView:
-		result += m.renderJobView(title)
+		return m.renderJobView(title)
 	case logView:
-		result += m.renderLogView(title)
+		return m.renderLogView(title)
 	default:
-		result += m.renderPipelineView(title)
+		return m.renderPipelineView(title)
 	}
-
-	return result
 }
 
 func (m model) renderPipelineView(title string) string {
@@ -662,15 +657,14 @@ func (m model) renderPipelineView(title string) string {
 	statusLine := fmt.Sprintf("📊 %d total | 🔄 %d running | [r] Refresh | [Enter] View Jobs",
 		len(m.pipelines), runningCount)
 
-	// Implement scrolling - show max 8 pipelines at a time
-	maxVisible := 8
+	// Implement simple scrolling - show max 10 pipelines at a time
+	maxVisible := 10
 	startIdx := 0
 	endIdx := len(m.pipelines)
 
-	// Calculate scroll window
+	// Simple scrolling: if more than maxVisible, show a window around cursor
 	if len(m.pipelines) > maxVisible {
-		// Keep cursor in middle of visible area when possible
-		startIdx = m.pipelineCursor - maxVisible/2
+		startIdx = m.pipelineCursor - 5 // Show 5 before cursor
 		if startIdx < 0 {
 			startIdx = 0
 		}
@@ -685,7 +679,7 @@ func (m model) renderPipelineView(title string) string {
 	}
 
 	s := title + "\n"
-	s += header + "                                                     \n"
+	s += header + "\n"
 	s += lipgloss.NewStyle().Faint(true).Render(statusLine) + "\n"
 
 	// Show scroll indicator if needed
@@ -693,11 +687,7 @@ func (m model) renderPipelineView(title string) string {
 		scrollInfo := fmt.Sprintf("Showing %d-%d of %d pipelines", startIdx+1, endIdx, len(m.pipelines))
 		s += lipgloss.NewStyle().Faint(true).Render(scrollInfo) + "\n"
 	}
-
-	// Add column headers for clarity
-	columnHeaders := "   Status    Pipeline ID  IID     Branch/Ref                Time"
-	s += lipgloss.NewStyle().Faint(true).Bold(true).Render(columnHeaders) + "\n"
-	s += lipgloss.NewStyle().Faint(true).Render(strings.Repeat("─", 80)) + "\n"
+	s += "\n"
 
 	// Pipeline list with enhanced visualization (only visible ones)
 	for i := startIdx; i < endIdx; i++ {
@@ -711,12 +701,6 @@ func (m model) renderPipelineView(title string) string {
 		status := getStatusIcon(pipeline.Status)
 		statusStyled := getStyledStatus(pipeline.Status, status)
 
-		// Progress bar for running pipelines
-		progressBar := ""
-		if pipeline.Status == "running" {
-			progressBar = getProgressBar(pipeline.Jobs)
-		}
-
 		// Duration formatting
 		duration := ""
 		if pipeline.Status == "running" {
@@ -725,20 +709,14 @@ func (m model) renderPipelineView(title string) string {
 			duration = fmt.Sprintf("⏱️  %s", pipeline.Duration)
 		}
 
-		// Enhanced line format with better differentiation
-		// Format: cursor + status + #ID + IID + branch + time
-		line := fmt.Sprintf("%s%s #%-8d %s %-25s %s",
+		// Simple line format - back to basics
+		line := fmt.Sprintf("%s%s #%-8d %-8s %-20s %s",
 			cursor,
 			statusStyled,
 			pipeline.ID,
-			pipeline.ProjectName, // This is now the IID like (#6942)
-			truncateString(pipeline.Ref, 25),
+			pipeline.ProjectName, // IID like (#6942)
+			truncateString(pipeline.Ref, 20),
 			duration)
-
-		// Add progress bar for running pipelines on same line
-		if progressBar != "" {
-			line += " " + progressBar
-		}
 
 		if m.pipelineCursor == i {
 			line = selectedStyle.Render(line)
