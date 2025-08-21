@@ -587,9 +587,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case jobView:
-				// Enter job -> show logs
+				// Enter job -> show logs or navigate to child pipeline
 				if m.jobCursor < len(m.jobs) {
 					selectedJob := m.jobs[m.jobCursor]
+
+					// Check if this is a child pipeline (starts with 🔗)
+					if strings.HasPrefix(selectedJob.Name, "🔗 Child Pipeline #") {
+						// Extract pipeline ID from the name
+						pipelineIDStr := strings.TrimPrefix(selectedJob.Name, "🔗 Child Pipeline #")
+						if pipelineID, err := strconv.Atoi(pipelineIDStr); err == nil {
+							// Navigate to child pipeline jobs
+							if strings.Contains(m.projectPath, "/") {
+								jobs, err := getRemotePipelineJobsWithChildren(m.projectPath, pipelineID)
+								if err == nil {
+									m.jobs = jobs
+									m.jobCursor = 0
+									m.selectedPipelineID = pipelineID
+									return m, tea.ClearScreen
+								}
+							}
+						}
+						return m, nil // Don't proceed to log view for child pipelines
+					}
 
 					// Handle demo mode (when gitlab is nil)
 					if m.gitlab == nil {
@@ -696,8 +715,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.logCursor++
 				}
 			}
-		case "pgup", "ctrl+u":
-			// Page up - jump 5 items
+		case "g":
+			// Go to first item (gg pattern)
+			switch m.currentView {
+			case pipelineView:
+				m.pipelineCursor = 0
+			case jobView:
+				m.jobCursor = 0
+			case logView:
+				m.logCursor = 0
+			}
+		case "G":
+			// Go to last item
+			switch m.currentView {
+			case pipelineView:
+				if len(m.pipelines) > 0 {
+					m.pipelineCursor = len(m.pipelines) - 1
+				}
+			case jobView:
+				if len(m.jobs) > 0 {
+					m.jobCursor = len(m.jobs) - 1
+				}
+			case logView:
+				logLines := strings.Split(m.logs, "\n")
+				if len(logLines) > 0 {
+					m.logCursor = len(logLines) - 1
+				}
+			}
+		case "ctrl+u":
+			// Page up
 			switch m.currentView {
 			case pipelineView:
 				m.pipelineCursor -= 5
@@ -709,9 +755,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.jobCursor < 0 {
 					m.jobCursor = 0
 				}
+			case logView:
+				m.logCursor -= 10
+				if m.logCursor < 0 {
+					m.logCursor = 0
+				}
 			}
-		case "pgdown", "ctrl+d":
-			// Page down - jump 5 items
+		case "ctrl+d":
+			// Page down
 			switch m.currentView {
 			case pipelineView:
 				m.pipelineCursor += 5
@@ -723,25 +774,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.jobs) > 0 && m.jobCursor >= len(m.jobs) {
 					m.jobCursor = len(m.jobs) - 1
 				}
-			}
-		case "home", "g":
-			// Go to first item
-			switch m.currentView {
-			case pipelineView:
-				m.pipelineCursor = 0
-			case jobView:
-				m.jobCursor = 0
-			}
-		case "end", "G":
-			// Go to last item
-			switch m.currentView {
-			case pipelineView:
-				if len(m.pipelines) > 0 {
-					m.pipelineCursor = len(m.pipelines) - 1
-				}
-			case jobView:
-				if len(m.jobs) > 0 {
-					m.jobCursor = len(m.jobs) - 1
+			case logView:
+				logLines := strings.Split(m.logs, "\n")
+				m.logCursor += 10
+				if len(logLines) > 0 && m.logCursor >= len(logLines) {
+					m.logCursor = len(logLines) - 1
 				}
 			}
 		default:
@@ -948,7 +985,7 @@ func (m model) renderPipelineView(title string) string {
 			statusStyled,
 			pipeline.ID,
 			pipeline.ProjectName, // IID like (#6942)
-			truncateString(pipeline.Ref, 20),
+			truncateString(getBetterBranchName(pipeline.Ref), 20),
 			duration)
 
 		if m.pipelineCursor == i {
@@ -1072,7 +1109,7 @@ func (m model) renderJobView(title string) string {
 		s += line + "\n"
 	}
 
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Ctrl+U/D: page up/down | g/G: first/last | Enter: view logs | Esc: back to pipelines | l: logs --follow")
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Ctrl+U/D: page up/down | g/G: first/last | Enter: view logs/child pipeline | Esc: back to pipelines | l: logs --follow")
 	return s
 }
 
@@ -1186,7 +1223,7 @@ func (m model) renderLogView(title string) string {
 	}
 
 	s += "\n" + lipgloss.NewStyle().Faint(true).Render(
-		fmt.Sprintf("Navigation: ↑/↓: scroll | /: search | n: next match | Esc: back%s%s",
+		fmt.Sprintf("Navigation: ↑/↓: scroll | g/G: first/last | /: search | n: next match | Esc: back%s%s",
 			statusInfo, searchInfo))
 
 	return s
@@ -1352,6 +1389,28 @@ func parsePipelineLine(line, projectName string) core.Pipeline {
 		ProjectName: projectName,
 		Jobs:        jobs,
 	}
+}
+
+// getBetterBranchName improves branch name display
+func getBetterBranchName(ref string) string {
+	// Handle merge request refs
+	if strings.HasPrefix(ref, "refs/merge-requests/") && strings.HasSuffix(ref, "/head") {
+		// Try to get the actual branch name from GitLab API
+		// For now, return a cleaner format
+		parts := strings.Split(ref, "/")
+		if len(parts) >= 3 {
+			mrNumber := parts[2]
+			return fmt.Sprintf("MR !%s", mrNumber)
+		}
+	}
+
+	// Handle regular refs
+	if strings.HasPrefix(ref, "refs/heads/") {
+		return strings.TrimPrefix(ref, "refs/heads/")
+	}
+
+	// Return as-is for other cases
+	return ref
 }
 
 func getProjectName(projectPath string) string {
