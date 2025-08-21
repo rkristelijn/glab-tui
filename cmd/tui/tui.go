@@ -368,7 +368,9 @@ func getChildPipelinesFromLogs(projectPath string, parentPipelineID int) ([]core
 
 	// Look for the nx-mono-repo-affected job or similar trigger job
 	for _, job := range jobs {
-		if strings.Contains(job.Name, "mono-repo") || strings.Contains(job.Name, "affected") {
+		if strings.Contains(strings.ToLower(job.Name), "mono-repo") ||
+			strings.Contains(strings.ToLower(job.Name), "affected") ||
+			strings.Contains(strings.ToLower(job.Name), "nx") {
 			// Get logs for this job
 			logs, err := getRemoteJobLogs(projectPath, job.ID)
 			if err != nil {
@@ -393,7 +395,8 @@ func parseTriggeredPipelinesFromLogs(logs string) []core.Pipeline {
 
 	for _, line := range lines {
 		// Look for lines like: "▶️ Triggered pipeline for internal-demo-application on path apps/internal-demo-application: https://gitlab.com/theapsgroup/agility/frontend-apps/-/pipelines/1997363434"
-		if strings.Contains(line, "▶️ Triggered pipeline for") && strings.Contains(line, "https://") {
+		// Also handle lines without emoji: "Triggered pipeline for internal-demo-application on path apps/internal-demo-application: https://gitlab.com/theapsgroup/agility/frontend-apps/-/pipelines/1997363434"
+		if strings.Contains(line, "Triggered pipeline for") && strings.Contains(line, "https://") {
 			// Extract app name and pipeline ID
 			parts := strings.Split(line, " ")
 			var appName string
@@ -422,8 +425,8 @@ func parseTriggeredPipelinesFromLogs(logs string) []core.Pipeline {
 				childPipeline := core.Pipeline{
 					ID:          pipelineID,
 					ProjectName: appName,
-					Ref:         "triggered", // We don't have branch info from logs
-					Status:      "running",   // Assume running initially
+					Ref:         "triggered",
+					Status:      "running",
 				}
 				childPipelines = append(childPipelines, childPipeline)
 			}
@@ -691,7 +694,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					// Check if this is a child pipeline (starts with 🔗)
 					if strings.HasPrefix(selectedJob.Name, "🔗 ") {
-						// Extract pipeline ID from the name (format: "🔗 app (branch) #12345")
+						// Extract pipeline ID from the name (format: "🔗 ● app-name #12345")
 						parts := strings.Split(selectedJob.Name, "#")
 						if len(parts) >= 2 {
 							pipelineIDStr := strings.TrimSpace(parts[len(parts)-1])
