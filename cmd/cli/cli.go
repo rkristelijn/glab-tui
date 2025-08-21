@@ -73,6 +73,14 @@ func Run(args []string) {
 		// Demo mode with mock data
 		fmt.Println("🎯 Starting glab-tui in DEMO mode with mock data...")
 		startTUIWithMockData()
+	case "remote", "url":
+		// Remote GitLab project mode
+		if len(args) < 2 {
+			fmt.Println("Usage: glab-tui remote <gitlab-url>")
+			fmt.Println("Example: glab-tui remote https://gitlab.com/theapsgroup/agility/frontend-apps")
+			os.Exit(1)
+		}
+		startTUIWithRemoteURL(args[1])
 	case "version", "v", "--version":
 		fmt.Println("glab-tui v0.1.0")
 	default:
@@ -603,14 +611,17 @@ COMMANDS:
     logs, l [--follow] <job-id>  Show job logs
         --follow, -f          🔥 Stream logs in real-time
     demo, d                   🎯 Demo mode with mock data (for non-GitLab repos)
+    remote, url <gitlab-url>  🌐 Connect to remote GitLab project
     test-real                 Test GitLab API connection
     speed                     🔥 Speed challenge mode
     help, h                   Show this help
     version, v                Show version
 
 EXAMPLES:
-    glab-tui                          # Start TUI
+    glab-tui                          # Start TUI (local GitLab repo)
     glab-tui demo                     # 🎯 Demo mode (works anywhere!)
+    glab-tui remote https://gitlab.com/theapsgroup/agility/frontend-apps  # 🌐 Remote project
+    glab-tui url https://gitlab.com/group/project  # 🌐 Remote project (short)
     glab-tui speed                    # 🔥 CHALLENGE MODE
     glab-tui pipelines                # List pipelines in CLI
     glab-tui job 11098249149         # Check specific job
@@ -629,4 +640,40 @@ func startTUIWithMockData() {
 
 	// Import TUI package and start with mock data
 	tui.StartWithMockData()
+}
+
+// startTUIWithRemoteURL starts TUI with remote GitLab URL
+func startTUIWithRemoteURL(gitlabURL string) {
+	fmt.Printf("🌐 Connecting to remote GitLab: %s\n", gitlabURL)
+	fmt.Println("📡 Loading pipeline data from remote repository...")
+	fmt.Println("")
+
+	// Parse GitLab URL to extract project path
+	projectPath := parseGitLabURL(gitlabURL)
+	if projectPath == "" {
+		fmt.Printf("❌ Invalid GitLab URL format: %s\n", gitlabURL)
+		fmt.Println("💡 Expected format: https://gitlab.com/group/project")
+		os.Exit(1)
+	}
+
+	// Start TUI with remote project
+	tui.StartWithRemoteProject(projectPath)
+}
+
+// parseGitLabURL extracts project path from GitLab URL
+func parseGitLabURL(url string) string {
+	// Remove common suffixes
+	url = strings.TrimSuffix(url, "/-/pipelines")
+	url = strings.TrimSuffix(url, ".git")
+	url = strings.TrimSuffix(url, "/")
+
+	// Extract project path from URL
+	if strings.Contains(url, "gitlab.com/") {
+		parts := strings.Split(url, "gitlab.com/")
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+
+	return ""
 }

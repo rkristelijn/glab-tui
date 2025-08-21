@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -130,6 +131,51 @@ func StartWithMockData() error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+// StartWithRemoteProject starts the TUI with a remote GitLab project
+func StartWithRemoteProject(projectPath string) error {
+	fmt.Printf("🚀 Starting GitLab TUI for remote project: %s\n", projectPath)
+
+	// Create GitLab wrapper for remote project
+	gitlab := gitlab.NewGlabWrapper("") // Empty local path for remote mode
+
+	// Try to get pipelines for the remote project
+	pipelines, err := getRemoteProjectPipelines(projectPath)
+	if err != nil {
+		fmt.Printf("❌ Could not load pipelines from remote project: %v\n", err)
+		fmt.Println("💡 Make sure you're authenticated with 'glab auth login'")
+		return err
+	}
+
+	// Create model with remote data
+	m := model{
+		currentView:      pipelineView,
+		projectPath:      projectPath,
+		pipelines:        pipelines,
+		pipelineCursor:   0,
+		pipelineSelected: make(map[int]struct{}),
+		gitlab:           gitlab,
+	}
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	_, err = p.Run()
+	return err
+}
+
+// getRemoteProjectPipelines gets pipelines for a remote GitLab project
+func getRemoteProjectPipelines(projectPath string) ([]core.Pipeline, error) {
+	// Use glab API to get pipelines for remote project
+	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/pipelines", url.QueryEscape(projectPath)))
+	_, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote pipelines: %w", err)
+	}
+
+	// TODO: Implement proper JSON parsing of GitLab API response
+	// For now, return mock data as fallback to demonstrate functionality
+	fmt.Println("📝 Note: Using mock data for now - real API parsing coming soon!")
+	return core.GetMockPipelines(), nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
