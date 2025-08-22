@@ -38,6 +38,7 @@ result-*
 # Development/debug files
 coms.json
 *.log
+# avoid.log contains sensitive tokens to avoid in code/docs
 
 # Build distribution
 dist/
