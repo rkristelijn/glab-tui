@@ -394,8 +394,8 @@ func parseTriggeredPipelinesFromLogs(logs string) []core.Pipeline {
 	lines := strings.Split(logs, "\n")
 
 	for _, line := range lines {
-		// Look for lines like: "▶️ Triggered pipeline for internal-demo-application on path apps/internal-demo-application: https://gitlab.com/theapsgroup/agility/frontend-apps/-/pipelines/1997363434"
-		// Also handle lines without emoji: "Triggered pipeline for internal-demo-application on path apps/internal-demo-application: https://gitlab.com/theapsgroup/agility/frontend-apps/-/pipelines/1997363434"
+		// Look for lines like: "▶️ Triggered pipeline for app-name on path apps/app-name: https://gitlab.com/group/project/-/pipelines/1234567890"
+		// Also handle lines without emoji: "Triggered pipeline for app-name on path apps/app-name: https://gitlab.com/group/project/-/pipelines/1234567890"
 		if strings.Contains(line, "Triggered pipeline for") && strings.Contains(line, "https://") {
 			// Extract app name and pipeline ID
 			parts := strings.Split(line, " ")
@@ -1519,7 +1519,7 @@ func getBetterBranchName(ref string) string {
 
 func getProjectName(projectPath string) string {
 	if strings.Contains(projectPath, "/") {
-		// Remote project like "theapsgroup/agility/frontend-apps"
+		// Remote project like "group/project-name"
 		parts := strings.Split(projectPath, "/")
 		if len(parts) >= 2 {
 			// Show group/project for better context

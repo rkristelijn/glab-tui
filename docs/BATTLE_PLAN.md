@@ -58,7 +58,7 @@ pipelines, err := client.GetPipelines(projectPath, 20)
 
 ```bash
 # Battle test:
-cd /git/lab/agility/frontend-apps
+cd /path/to/your/gitlab/project
 npx glab-tui
 # Should show: Pipeline 1997166445 - failed - parent_pipeline
 ```

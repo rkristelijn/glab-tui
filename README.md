@@ -126,7 +126,7 @@ go install github.com/rkristelijn/glab-tui@latest
 ## 🎨 Interface Preview
 
 ```
-┌─ GitLab TUI - agility/frontend-apps | 10 pipelines (3 running) ─────────┐
+┌─ GitLab TUI - group/project-name | 10 pipelines (3 running) ─────────┐
 │ [P]ipelines [J]obs [L]ogs                                         [?] │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Pipelines                                               ↻ Auto-refresh │
@@ -137,8 +137,8 @@ go install github.com/rkristelijn/glab-tui@latest
 │ Jobs (Pipeline #1234567)                                               │
 │ ✓ build          success   (45s)   Dependencies installed             │
 │ ● test           running   (12s)   Running test suite...              │
-│ 🔗 ● portal #1997363518    running   Child pipeline                    │
-│ 🔗 ● internal-demo #1997363434  running   Child pipeline               │
+│ 🔗 ● app-portal #1997363518    running   Child pipeline                    │
+│ 🔗 ● app-demo #1997363434  running   Child pipeline               │
 │ ○ deploy         pending           Waiting for tests                   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -152,10 +152,10 @@ Perfect for **NX mono-repo** workflows:
 📊 12 total | ✅ 2 success | 🔄 6 running | ❌ 0 failed
 
   ✓ nx-mono-repo-affected     success      mono-repo
-  ● 🔗 ● internal-demo-application #1997363434    running      child-pipeline
-  ● 🔗 ● portal #1997363518                       running      child-pipeline
-  ● 🔗 ● request-for-quote #1997363593            running      child-pipeline
-  ● 🔗 ● social-networker #1997363731             running      child-pipeline
+  ● 🔗 ● app-demo #1997363434    running      child-pipeline
+  ● 🔗 ● app-portal #1997363518                       running      child-pipeline
+  ● 🔗 ● app-quote #1997363593            running      child-pipeline
+  ● 🔗 ● app-social #1997363731             running      child-pipeline
 ```
 
 - **Navigate to child pipelines** with Enter key

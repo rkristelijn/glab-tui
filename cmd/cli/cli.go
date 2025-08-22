@@ -77,7 +77,7 @@ func Run(args []string) {
 		// Remote GitLab project mode
 		if len(args) < 2 {
 			fmt.Println("Usage: glab-tui remote <gitlab-url>")
-			fmt.Println("Example: glab-tui remote https://gitlab.com/theapsgroup/agility/frontend-apps")
+			fmt.Println("Example: glab-tui remote https://gitlab.com/group/project-name")
 			os.Exit(1)
 		}
 		startTUIWithRemoteURL(args[1])
@@ -571,7 +571,7 @@ func testRealGitLab() {
 	fmt.Println("Testing real GitLab connection using glab...")
 
 	// Test glab command directly
-	cmd := exec.Command("glab", "pipeline", "list", "-R", "group/project/frontend-apps")
+	cmd := exec.Command("glab", "pipeline", "list", "-R", "group/project-name")
 	output, err := cmd.Output()
 	if err != nil {
 		fmt.Printf("❌ Failed to run glab command: %v\n", err)
@@ -620,7 +620,7 @@ COMMANDS:
 EXAMPLES:
     glab-tui                          # Start TUI (local GitLab repo)
     glab-tui demo                     # 🎯 Demo mode (works anywhere!)
-    glab-tui remote https://gitlab.com/theapsgroup/agility/frontend-apps  # 🌐 Remote project
+    glab-tui remote https://gitlab.com/group/project-name  # 🌐 Remote project
     glab-tui url https://gitlab.com/group/project  # 🌐 Remote project (short)
     glab-tui speed                    # 🔥 CHALLENGE MODE
     glab-tui pipelines                # List pipelines in CLI
