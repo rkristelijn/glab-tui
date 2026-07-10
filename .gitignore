@@ -42,3 +42,4 @@ coms.json
 
 # Build distribution
 dist/
+.tmp/

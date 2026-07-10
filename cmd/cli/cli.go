@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,6 +27,9 @@ func Run(args []string) {
 	command := args[0]
 
 	switch command {
+	case "auto":
+		// Auto mode: try TUI first, fallback to selector
+		autoMode()
 	case "pipelines", "p":
 		listPipelines()
 	case "job", "j":
@@ -65,6 +70,13 @@ func Run(args []string) {
 		} else {
 			showJobLogs(jobIDStr)
 		}
+	case "tests", "t":
+		if len(args) < 2 {
+			fmt.Println("Usage: glab-tui tests <pipeline-id>")
+			fmt.Println("       glab-tui tests latest")
+			os.Exit(1)
+		}
+		showTestResults(args[1])
 	case "test-real":
 		testRealGitLab()
 	case "help", "h", "--help":
@@ -81,6 +93,9 @@ func Run(args []string) {
 			os.Exit(1)
 		}
 		startTUIWithRemoteURL(args[1])
+	case "select", "s":
+		// Repository selector mode
+		startRepositorySelector()
 	case "version", "v", "--version":
 		fmt.Println("glab-tui v0.1.0")
 	default:
@@ -601,15 +616,16 @@ func showHelp() {
 	fmt.Println(`glab-tui - GitLab TUI and CLI
 
 USAGE:
-    glab-tui                    Start interactive TUI (default)
-    glab-tui speed              🔥 SPEED CHALLENGE MODE
+    glab-tui                    🔍 Repository selector (default)
     glab-tui [COMMAND]          Run CLI command
 
 COMMANDS:
+    select, s                  🔍 Show repository selector (default)
     pipelines, p               List pipelines
     job, j <job-id>           Check specific job status
     logs, l [--follow] <job-id>  Show job logs
         --follow, -f          🔥 Stream logs in real-time
+    tests, t <pipeline-id>    📊 Show test results from pipeline
     demo, d                   🎯 Demo mode with mock data (for non-GitLab repos)
     remote, url <gitlab-url>  🌐 Connect to remote GitLab project
     test-real                 Test GitLab API connection
@@ -618,7 +634,8 @@ COMMANDS:
     version, v                Show version
 
 EXAMPLES:
-    glab-tui                          # Start TUI (local GitLab repo)
+    glab-tui                          # 🔍 Repository selector (default)
+    glab-tui select                   # 🔍 Choose from your repositories
     glab-tui demo                     # 🎯 Demo mode (works anywhere!)
     glab-tui remote https://gitlab.com/group/project-name  # 🌐 Remote project
     glab-tui url https://gitlab.com/group/project  # 🌐 Remote project (short)
@@ -628,8 +645,23 @@ EXAMPLES:
     glab-tui logs 11098249149        # Show job logs (static)
     glab-tui logs --follow 11098249149  # 🔥 Stream logs in real-time
     glab-tui logs -f 11098249149     # 🔥 Stream logs (short flag)
+    glab-tui tests latest            # 📊 Show test results from latest pipeline
+    glab-tui tests 2027582415        # 📊 Show test results from specific pipeline
     glab-tui test-real               # Test GitLab connection
-    glab-tui help                    # Show help`)
+    glab-tui help                    # Show help
+
+CONFIGURATION:
+    Create a .env file to set your default GitLab group:
+    DEFAULT_GROUP=your-org  # Group level for repository selection
+    DEFAULT_GROUP=your-org/your-project  # Specific project
+
+REPOSITORY SELECTOR:
+    The repository selector supports search:
+    /search-term    Filter repositories (e.g., '/social', '/frontend')
+    clear           Clear current search
+    1-20            Select repository by number
+    tui             Start local TUI (if in GitLab repo)
+    q               Quit`)
 }
 
 // startTUIWithMockData starts TUI with mock data for demo purposes
@@ -676,4 +708,510 @@ func parseGitLabURL(url string) string {
 	}
 
 	return ""
+}
+
+// startRepositorySelector shows a list of available GitLab repositories
+func startRepositorySelector() {
+	fmt.Println("🔍 Repository Selector")
+	fmt.Println("═══════════════════════")
+	
+	// Check if we have a .env file with default group
+	if defaultGroup := getDefaultGroup(); defaultGroup != "" {
+		fmt.Printf("📁 Default group: %s\n", defaultGroup)
+		
+		// Check if it's a specific project (contains multiple slashes) or just a group
+		if strings.Count(defaultGroup, "/") >= 2 {
+			// It's a specific project like "theapsgroup/social-networker/Services/social-networker"
+			fmt.Print("Use default project? [Y/n]: ")
+			var input string
+			fmt.Scanln(&input)
+			
+			if input == "" || strings.ToLower(input) == "y" || strings.ToLower(input) == "yes" {
+				fmt.Printf("🚀 Starting TUI for project: %s\n", defaultGroup)
+				tui.StartWithGroup(defaultGroup)
+				return
+			}
+		} else {
+			// It's just a group like "theapsgroup" - show repositories from that group
+			fmt.Printf("🔍 Fetching repositories from group: %s\n", defaultGroup)
+			showGroupRepositories(defaultGroup)
+			return
+		}
+	}
+	
+	fmt.Println("🔍 Fetching your GitLab repositories...")
+	
+	// Get user's repositories using glab
+	cmd := exec.Command("glab", "repo", "list", "--per-page", "20")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("❌ Failed to get repositories: %v\n", err)
+		fmt.Println("💡 Make sure you're authenticated with 'glab auth login'")
+		
+		// Offer to create .env file
+		fmt.Print("\nWould you like to create a .env file with your GitLab settings? [y/N]: ")
+		var input string
+		fmt.Scanln(&input)
+		if strings.ToLower(input) == "y" || strings.ToLower(input) == "yes" {
+			createEnvFile()
+		}
+		os.Exit(1)
+	}
+
+	repos := parseRepositoryList(string(output))
+	if len(repos) == 0 {
+		fmt.Println("❌ No repositories found")
+		fmt.Println("💡 Try: glab auth login")
+		os.Exit(1)
+	}
+
+	// Show repositories with search functionality
+	showRepositoriesWithSearch(repos)
+}
+
+// showRepositoriesWithSearch displays repositories with search capability
+func showRepositoriesWithSearch(repos []string) {
+	filteredRepos := repos
+	searchTerm := ""
+
+	for {
+		// Clear screen and show header
+		fmt.Print("\033[2J\033[H") // Clear screen
+		fmt.Println("🔍 Repository Selector")
+		fmt.Println("═══════════════════════")
+		
+		if searchTerm != "" {
+			fmt.Printf("🔍 Search: '%s' (showing %d/%d repos)\n", searchTerm, len(filteredRepos), len(repos))
+		} else {
+			fmt.Printf("📋 Found %d repositories:\n", len(repos))
+		}
+		fmt.Println()
+
+		// Show filtered repositories
+		for i, repo := range filteredRepos {
+			if i >= 20 { // Limit display to 20
+				fmt.Printf("... and %d more (use search to filter)\n", len(filteredRepos)-20)
+				break
+			}
+			fmt.Printf("%2d. %s\n", i+1, repo)
+		}
+		
+		fmt.Println()
+		fmt.Println("Commands:")
+		fmt.Println("  1-20: Select repository")
+		fmt.Println("  /search-term: Filter repositories (e.g., '/social', '/supplier')")
+		fmt.Println("  clear: Clear search")
+		fmt.Println("  all: Show all accessible repositories")
+		fmt.Println("  tui: Start local TUI")
+		fmt.Println("  q: Quit")
+		fmt.Print("\nEnter command: ")
+		
+		var input string
+		fmt.Scanln(&input)
+		
+		if input == "q" || input == "quit" {
+			fmt.Println("👋 Goodbye!")
+			return
+		}
+		
+		if input == "tui" {
+			fmt.Println("🚀 Starting local TUI...")
+			if err := tui.Run(); err != nil {
+				fmt.Printf("TUI error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+		
+		if input == "clear" {
+			searchTerm = ""
+			filteredRepos = repos
+			continue
+		}
+		
+		if input == "all" {
+			// Get all accessible repositories
+			fmt.Println("🔍 Fetching all accessible repositories...")
+			cmd := exec.Command("glab", "repo", "list", "--all", "--per-page", "100")
+			output, err := cmd.Output()
+			if err != nil {
+				fmt.Printf("❌ Failed to get all repositories: %v\n", err)
+				fmt.Print("Press Enter to continue...")
+				fmt.Scanln()
+				continue
+			}
+			allRepos := parseRepositoryList(string(output))
+			if len(allRepos) > 0 {
+				repos = allRepos
+				filteredRepos = allRepos
+				searchTerm = ""
+			}
+			continue
+		}
+		
+		if strings.HasPrefix(input, "/") {
+			// Search command
+			searchTerm = strings.TrimPrefix(input, "/")
+			filteredRepos = filterRepositories(repos, searchTerm)
+			if len(filteredRepos) == 0 {
+				fmt.Printf("❌ No repositories found matching '%s'\n", searchTerm)
+				fmt.Print("Press Enter to continue...")
+				fmt.Scanln()
+			}
+			continue
+		}
+		
+		// Handle search without / prefix for convenience
+		if !strings.Contains(input, " ") && len(input) > 2 {
+			// Looks like a search term, try searching
+			searchTerm = input
+			filteredRepos = filterRepositories(repos, searchTerm)
+			if len(filteredRepos) == 0 {
+				fmt.Printf("❌ No repositories found matching '%s'\n", searchTerm)
+				fmt.Printf("💡 Tip: Use '/search-term' format or try 'all' to see more repositories\n")
+				fmt.Print("Press Enter to continue...")
+				fmt.Scanln()
+			}
+			continue
+		}
+		
+		// Try to parse as number
+		choice, err := strconv.Atoi(input)
+		if err != nil || choice < 1 || choice > len(filteredRepos) || choice > 20 {
+			fmt.Println("❌ Invalid selection")
+			fmt.Print("Press Enter to continue...")
+			fmt.Scanln()
+			continue
+		}
+		
+		selectedRepo := filteredRepos[choice-1]
+		fmt.Printf("🚀 Starting TUI for: %s\n", selectedRepo)
+		
+		// Ask if they want to save this as default
+		fmt.Print("Save as default? [y/N]: ")
+		var saveInput string
+		fmt.Scanln(&saveInput)
+		if strings.ToLower(saveInput) == "y" || strings.ToLower(saveInput) == "yes" {
+			saveDefaultGroup(selectedRepo)
+		}
+		
+		// Start TUI with selected repository
+		tui.StartWithRemoteProject(selectedRepo)
+		return
+	}
+}
+
+// filterRepositories filters repositories based on search term
+func filterRepositories(repos []string, searchTerm string) []string {
+	if searchTerm == "" {
+		return repos
+	}
+	
+	var filtered []string
+	searchLower := strings.ToLower(searchTerm)
+	
+	for _, repo := range repos {
+		if strings.Contains(strings.ToLower(repo), searchLower) {
+			filtered = append(filtered, repo)
+		}
+	}
+	
+	return filtered
+}
+
+// showGroupRepositories shows repositories from a specific GitLab group
+func showGroupRepositories(groupName string) {
+	fmt.Printf("🔍 Fetching repositories from group: %s...\n", groupName)
+	
+	// Get repositories from specific group using glab
+	cmd := exec.Command("glab", "repo", "list", "--group", groupName, "--per-page", "50")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("❌ Failed to get repositories from group %s: %v\n", groupName, err)
+		fmt.Println("💡 Make sure you have access to this group and are authenticated")
+		
+		// Fallback to all repositories
+		fmt.Println("🔄 Falling back to all your repositories...")
+		cmd = exec.Command("glab", "repo", "list", "--per-page", "50")
+		output, err = cmd.Output()
+		if err != nil {
+			fmt.Printf("❌ Failed to get repositories: %v\n", err)
+			fmt.Println("💡 Make sure you're authenticated with 'glab auth login'")
+			os.Exit(1)
+		}
+	}
+
+	repos := parseRepositoryList(string(output))
+	if len(repos) == 0 {
+		fmt.Printf("❌ No repositories found in group %s\n", groupName)
+		fmt.Println("💡 Try: glab auth login")
+		os.Exit(1)
+	}
+
+	// Show repositories with search functionality
+	showRepositoriesWithSearch(repos)
+}
+
+// parseRepositoryList parses the output of 'glab repo list'
+func parseRepositoryList(output string) []string {
+	lines := strings.Split(output, "\n")
+	var repos []string
+	
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Showing") {
+			continue
+		}
+		
+		// Extract repository path from line like "group/project-name"
+		if strings.Contains(line, "/") {
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				repos = append(repos, parts[0])
+			}
+		}
+	}
+	
+	return repos
+}
+type TestSuite struct {
+	Name         string     `json:"name"`
+	TotalCount   int        `json:"total_count"`
+	SuccessCount int        `json:"success_count"`
+	FailedCount  int        `json:"failed_count"`
+	ErrorCount   int        `json:"error_count"`
+	SkippedCount int        `json:"skipped_count"`
+	TestCases    []TestCase `json:"test_cases"`
+}
+
+// TestCase represents a test case from GitLab API
+type TestCase struct {
+	Name      string `json:"name"`
+	Classname string `json:"classname"`
+	Status    string `json:"status"`
+	Time      float64 `json:"execution_time"`
+}
+
+// TestReport represents the full test report from GitLab API
+type TestReport struct {
+	TotalCount   int         `json:"total_count"`
+	SuccessCount int         `json:"success_count"`
+	FailedCount  int         `json:"failed_count"`
+	ErrorCount   int         `json:"error_count"`
+	SkippedCount int         `json:"skipped_count"`
+	TestSuites   []TestSuite `json:"test_suites"`
+}
+
+func showTestResults(pipelineID string) {
+	fmt.Printf("📊 Fetching test results for pipeline %s...\n", pipelineID)
+
+	// Handle "latest" keyword
+	if pipelineID == "latest" {
+		cmd := exec.Command("glab", "api", "projects/:id/pipelines")
+		output, err := cmd.Output()
+		if err != nil {
+			fmt.Printf("❌ Failed to get latest pipeline: %v\n", err)
+			os.Exit(1)
+		}
+
+		var pipelines []map[string]interface{}
+		if err := json.Unmarshal(output, &pipelines); err != nil {
+			fmt.Printf("❌ Failed to parse pipelines: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(pipelines) == 0 {
+			fmt.Println("❌ No pipelines found")
+			os.Exit(1)
+		}
+
+		pipelineID = fmt.Sprintf("%.0f", pipelines[0]["id"].(float64))
+		fmt.Printf("📊 Using latest pipeline: %s\n", pipelineID)
+	}
+
+	// Get test report
+	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/:id/pipelines/%s/test_report", pipelineID))
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("❌ Failed to get test results: %v\n", err)
+		fmt.Println("💡 Make sure the pipeline has test results and you have access")
+		os.Exit(1)
+	}
+
+	var testReport TestReport
+	if err := json.Unmarshal(output, &testReport); err != nil {
+		fmt.Printf("❌ Failed to parse test results: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Display summary
+	fmt.Printf("\n📊 Test Results Summary (Pipeline %s)\n", pipelineID)
+	fmt.Printf("═══════════════════════════════════════════════════════════\n")
+	fmt.Printf("Total Tests: %d | ✅ Success: %d | ❌ Failed: %d | ⚠️ Errors: %d | ⏭️ Skipped: %d\n",
+		testReport.TotalCount, testReport.SuccessCount, testReport.FailedCount, 
+		testReport.ErrorCount, testReport.SkippedCount)
+	
+	if testReport.TotalCount > 0 {
+		successRate := (testReport.SuccessCount * 100) / testReport.TotalCount
+		fmt.Printf("Success Rate: %d%%\n", successRate)
+	}
+	fmt.Println()
+
+	// Display test suites
+	for _, suite := range testReport.TestSuites {
+		if suite.TotalCount == 0 {
+			continue // Skip empty suites
+		}
+
+		fmt.Printf("## 🔍 %s\n", suite.Name)
+		fmt.Printf("Tests: %d | ✅ %d | ❌ %d | ⚠️ %d | ⏭️ %d",
+			suite.TotalCount, suite.SuccessCount, suite.FailedCount, 
+			suite.ErrorCount, suite.SkippedCount)
+		
+		if suite.TotalCount > 0 {
+			successRate := (suite.SuccessCount * 100) / suite.TotalCount
+			fmt.Printf(" | Success: %d%%", successRate)
+		}
+		fmt.Println()
+
+		// Show first few test cases
+		maxCases := 5
+		if len(suite.TestCases) < maxCases {
+			maxCases = len(suite.TestCases)
+		}
+
+		for i := 0; i < maxCases; i++ {
+			testCase := suite.TestCases[i]
+			var icon string
+			switch testCase.Status {
+			case "success":
+				icon = "✅"
+			case "failed":
+				icon = "❌"
+			case "error":
+				icon = "⚠️ "
+			case "skipped":
+				icon = "⏭️"
+			default:
+				icon = "❓"
+			}
+			fmt.Printf("  %s %s (%s)\n", icon, testCase.Name, testCase.Classname)
+		}
+
+		if len(suite.TestCases) > maxCases {
+			fmt.Printf("  ... and %d more tests\n", len(suite.TestCases)-maxCases)
+		}
+		fmt.Println()
+	}
+
+	if len(testReport.TestSuites) == 0 {
+		fmt.Println("ℹ️  No test suites found in this pipeline")
+		fmt.Println("💡 Make sure your jobs generate JUnit XML reports")
+	}
+}
+
+// getDefaultGroup reads the default group from .env file
+func getDefaultGroup() string {
+	file, err := os.Open(".env")
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "DEFAULT_GROUP=") {
+			return strings.TrimPrefix(line, "DEFAULT_GROUP=")
+		}
+	}
+	return ""
+}
+
+// saveDefaultGroup saves the default group to .env file
+func saveDefaultGroup(group string) {
+	// Read existing .env content
+	var lines []string
+	file, err := os.Open(".env")
+	if err == nil {
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "DEFAULT_GROUP=") {
+				lines = append(lines, line)
+			}
+		}
+		file.Close()
+	}
+
+	// Add the new default group
+	lines = append(lines, fmt.Sprintf("DEFAULT_GROUP=%s", group))
+
+	// Write back to .env
+	file, err = os.Create(".env")
+	if err != nil {
+		fmt.Printf("❌ Failed to save default group: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	for _, line := range lines {
+		fmt.Fprintln(file, line)
+	}
+
+	fmt.Printf("✅ Saved %s as default group in .env\n", group)
+}
+
+// createEnvFile creates a new .env file with basic settings
+func createEnvFile() {
+	fmt.Println("📝 Creating .env file...")
+	
+	file, err := os.Create(".env")
+	if err != nil {
+		fmt.Printf("❌ Failed to create .env file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	envContent := `# GitLab Configuration
+GITLAB_URL=https://gitlab.com
+GITLAB_TOKEN=your-token-here
+
+# Default group/project (set by glab-tui select)
+# DEFAULT_GROUP=your-org/your-project
+
+# UI Configuration
+REFRESH_INTERVAL=5s
+MAX_PIPELINES_PER_PROJECT=10
+`
+
+	fmt.Fprint(file, envContent)
+	fmt.Println("✅ Created .env file")
+	fmt.Println("💡 Set your GITLAB_TOKEN and run 'glab auth login'")
+}
+
+// autoMode tries to start TUI with local repo, falls back to selector
+func autoMode() {
+	// Try to detect current GitLab project
+	projectPath, err := getCurrentProjectPath()
+	if err != nil {
+		// Not in a GitLab repo, show better error and go to selector
+		if strings.Contains(err.Error(), "github.com") {
+			fmt.Println("ℹ️  You're in a GitHub repository, not GitLab")
+		} else if strings.Contains(err.Error(), "failed to get git remote") {
+			fmt.Println("ℹ️  Not in a Git repository")
+		} else {
+			fmt.Printf("ℹ️  Not in a GitLab repository: %v\n", err)
+		}
+		fmt.Println("🔍 Switching to repository selector...")
+		startRepositorySelector()
+		return
+	}
+
+	// We're in a GitLab repo, start TUI directly
+	fmt.Printf("🚀 Starting GitLab TUI for: %s\n", projectPath)
+	if err := tui.StartWithRemoteProject(projectPath); err != nil {
+		fmt.Printf("TUI error: %v\n", err)
+		os.Exit(1)
+	}
 }

@@ -153,6 +153,94 @@ func (g *GlabWrapper) GetJobStatus(jobID int) (string, error) {
 	status := jobData[statusStart : statusStart+statusEnd]
 	return status, nil
 }
+
+// GetProjectMergeRequests fetches merge requests using glab CLI
+func (g *GlabWrapper) GetProjectMergeRequests(projectID int) ([]core.MergeRequest, error) {
+	cmd := exec.Command("glab", "mr", "list", "-R", g.projectPath, "--output", "json")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run glab mr list command: %w", err)
+	}
+
+	var glabMRs []struct {
+		IID          int    `json:"iid"`
+		Title        string `json:"title"`
+		State        string `json:"state"`
+		SourceBranch string `json:"source_branch"`
+		TargetBranch string `json:"target_branch"`
+		Author       struct {
+			Name     string `json:"name"`
+			Username string `json:"username"`
+		} `json:"author"`
+		WebURL    string `json:"web_url"`
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
+		MergedAt  string `json:"merged_at"`
+		ClosedAt  string `json:"closed_at"`
+	}
+
+	if err := json.Unmarshal(output, &glabMRs); err != nil {
+		return nil, fmt.Errorf("failed to parse glab mr list output: %w", err)
+	}
+
+	var mergeRequests []core.MergeRequest
+	for _, mr := range glabMRs {
+		mergeRequests = append(mergeRequests, core.MergeRequest{
+			ID:           mr.IID,
+			Title:        mr.Title,
+			State:        mr.State,
+			SourceBranch: mr.SourceBranch,
+			TargetBranch: mr.TargetBranch,
+			Author:       mr.Author,
+			WebURL:       mr.WebURL,
+			CreatedAt:    mr.CreatedAt,
+			UpdatedAt:    mr.UpdatedAt,
+			MergedAt:     mr.MergedAt,
+			ClosedAt:     mr.ClosedAt,
+			ProjectID:    projectID,
+			ProjectName:  "frontend-apps", // TODO: Get actual project name
+			HasPipeline:  false,           // TODO: Check if MR has pipeline
+		})
+	}
+
+	return mergeRequests, nil
+}
+
+// GetMergeRequestPipeline fetches the pipeline associated with a merge request
+func (g *GlabWrapper) GetMergeRequestPipeline(mrID int) (*core.Pipeline, error) {
+	// Use glab API to get MR pipeline info
+	cmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/merge_requests/%d", strings.ReplaceAll(g.projectPath, "/", "%2F"), mrID))
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get merge request info: %w", err)
+	}
+
+	// Parse JSON to extract pipeline info
+	var mrData struct {
+		Pipeline struct {
+			ID     int    `json:"id"`
+			Status string `json:"status"`
+			Ref    string `json:"ref"`
+			WebURL string `json:"web_url"`
+		} `json:"pipeline"`
+	}
+
+	if err := json.Unmarshal(output, &mrData); err != nil {
+		return nil, fmt.Errorf("failed to parse merge request data: %w", err)
+	}
+
+	if mrData.Pipeline.ID == 0 {
+		return nil, nil // No pipeline associated
+	}
+
+	return &core.Pipeline{
+		ID:          mrData.Pipeline.ID,
+		Status:      mrData.Pipeline.Status,
+		Ref:         mrData.Pipeline.Ref,
+		WebURL:      mrData.Pipeline.WebURL,
+		ProjectName: "frontend-apps", // TODO: Get actual project name
+	}, nil
+}
 func ParseGlabPipelineList(output string) ([]core.Pipeline, error) {
 	lines := strings.Split(output, "\n")
 	var pipelines []core.Pipeline

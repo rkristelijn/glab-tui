@@ -52,9 +52,7 @@ func Run() error {
 	// Auto-detect current project
 	projectPath, err := getCurrentProjectPath()
 	if err != nil {
-		fmt.Printf("❌ Could not detect GitLab project: %v\n", err)
-		fmt.Println("💡 Make sure you're in a GitLab repository and authenticated with 'glab auth login'")
-		return err
+		return fmt.Errorf("could not detect GitLab project: %w", err)
 	}
 
 	model := initialModel(projectPath)
@@ -67,6 +65,7 @@ type viewMode int
 
 const (
 	pipelineView viewMode = iota
+	mergeRequestView
 	jobView
 	logView
 )
@@ -89,6 +88,11 @@ type model struct {
 	pipelines        []core.Pipeline
 	pipelineCursor   int
 	pipelineSelected map[int]struct{}
+
+	// Merge Request view
+	mergeRequests   []core.MergeRequest
+	mrCursor        int
+	selectedMRID    int
 
 	// Job view
 	jobs               []core.Job
@@ -114,12 +118,17 @@ func initialModel(projectPath string) model {
 		pipelines = core.GetMockPipelines()
 	}
 
+	// Try to get merge requests
+	mergeRequests := core.GetMockMergeRequests() // Start with mock data
+
 	return model{
 		currentView:      pipelineView,
 		projectPath:      projectPath,
 		pipelines:        pipelines,
 		pipelineCursor:   0,
 		pipelineSelected: make(map[int]struct{}),
+		mergeRequests:    mergeRequests,
+		mrCursor:         0,
 		gitlab:           gitlab.NewGlabWrapper(projectPath),
 	}
 }
@@ -139,12 +148,20 @@ func StartWithMockData() error {
 		pipelines:        core.GetMockPipelines(),
 		pipelineCursor:   0,
 		pipelineSelected: make(map[int]struct{}),
+		mergeRequests:    core.GetMockMergeRequests(),
+		mrCursor:         0,
 		gitlab:           nil, // No real GitLab connection in demo mode
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+// StartWithGroup starts the TUI with a GitLab group/project
+func StartWithGroup(groupPath string) error {
+	fmt.Printf("🚀 Starting GitLab TUI for group: %s\n", groupPath)
+	return StartWithRemoteProject(groupPath)
 }
 
 // StartWithRemoteProject starts the TUI with a remote GitLab project
@@ -166,6 +183,8 @@ func StartWithRemoteProject(projectPath string) error {
 		pipelines:        pipelines,
 		pipelineCursor:   0,
 		pipelineSelected: make(map[int]struct{}),
+		mergeRequests:    core.GetMockMergeRequests(), // TODO: Load real MR data
+		mrCursor:         0,
 		gitlab:           nil, // Use nil for remote mode, handle in Update()
 	}
 
@@ -602,6 +621,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				// Go back to previous view
 				switch m.currentView {
+				case mergeRequestView:
+					m.currentView = pipelineView
+					return m, tea.ClearScreen
 				case jobView:
 					m.currentView = pipelineView
 					return m, tea.ClearScreen
@@ -610,8 +632,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.ClearScreen
 				}
 			}
+		case "p":
+			// Switch to pipeline view
+			if m.currentView != pipelineView {
+				m.currentView = pipelineView
+				return m, tea.ClearScreen
+			}
+		case "t":
+			// Switch to test results view
+			testModel := NewTestResultsModel()
+			return testModel, testModel.Init()
+		case "m":
+			// Switch to merge request view
+			if m.currentView != mergeRequestView {
+				m.currentView = mergeRequestView
+				return m, tea.ClearScreen
+			}
 		case "r":
-			// Refresh pipelines
+			// Refresh data based on current view
 			if m.currentView == pipelineView {
 				// Check if this is remote mode
 				if strings.Contains(m.projectPath, "/") && m.gitlab == nil {
@@ -644,6 +682,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						} else if m.pipelineCursor >= len(m.pipelines) {
 							m.pipelineCursor = len(m.pipelines) - 1
 						}
+					}
+				}
+			} else if m.currentView == mergeRequestView {
+				// Refresh merge requests
+				if m.gitlab != nil {
+					// Real GitLab mode
+					mergeRequests, err := m.gitlab.GetProjectMergeRequests(0)
+					if err == nil {
+						m.mergeRequests = mergeRequests
+						// Reset cursor to avoid out of bounds
+						if len(m.mergeRequests) == 0 {
+							m.mrCursor = 0
+						} else if m.mrCursor >= len(m.mergeRequests) {
+							m.mrCursor = len(m.mergeRequests) - 1
+						}
+					}
+				} else {
+					// Demo mode - refresh mock data
+					m.mergeRequests = core.GetMockMergeRequests()
+					if len(m.mergeRequests) == 0 {
+						m.mrCursor = 0
+					} else if m.mrCursor >= len(m.mergeRequests) {
+						m.mrCursor = len(m.mergeRequests) - 1
 					}
 				}
 			}
@@ -686,6 +747,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, tea.ClearScreen
 						}
 					}
+				}
+			case mergeRequestView:
+				// Enter merge request -> show associated pipeline jobs
+				if m.mrCursor < len(m.mergeRequests) {
+					selectedMR := m.mergeRequests[m.mrCursor]
+					m.selectedMRID = selectedMR.ID
+
+					// If MR has a pipeline, show its jobs
+					if selectedMR.HasPipeline && selectedMR.PipelineID > 0 {
+						if m.gitlab == nil {
+							// Demo mode - use mock jobs
+							m.jobs = core.GetMockJobs()
+						} else {
+							// Real GitLab mode - get pipeline jobs
+							jobs, err := m.gitlab.GetPipelineJobs(selectedMR.PipelineID)
+							if err == nil {
+								m.jobs = jobs
+							} else {
+								// Fallback to mock jobs
+								m.jobs = core.GetMockJobs()
+							}
+						}
+						m.jobCursor = 0
+						m.selectedPipelineID = selectedMR.PipelineID
+						m.currentView = jobView
+						return m, tea.ClearScreen
+					}
+					// If no pipeline, could show MR details or stay in MR view
 				}
 			case jobView:
 				// Enter job -> show logs or navigate to child pipeline
@@ -794,6 +883,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.pipelineCursor > 0 {
 					m.pipelineCursor--
 				}
+			case mergeRequestView:
+				if m.mrCursor > 0 {
+					m.mrCursor--
+				}
 			case jobView:
 				if m.jobCursor > 0 {
 					m.jobCursor--
@@ -808,6 +901,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case pipelineView:
 				if len(m.pipelines) > 0 && m.pipelineCursor < len(m.pipelines)-1 {
 					m.pipelineCursor++
+				}
+			case mergeRequestView:
+				if len(m.mergeRequests) > 0 && m.mrCursor < len(m.mergeRequests)-1 {
+					m.mrCursor++
 				}
 			case jobView:
 				if len(m.jobs) > 0 && m.jobCursor < len(m.jobs)-1 {
@@ -824,6 +921,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.currentView {
 			case pipelineView:
 				m.pipelineCursor = 0
+			case mergeRequestView:
+				m.mrCursor = 0
 			case jobView:
 				m.jobCursor = 0
 			case logView:
@@ -835,6 +934,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case pipelineView:
 				if len(m.pipelines) > 0 {
 					m.pipelineCursor = len(m.pipelines) - 1
+				}
+			case mergeRequestView:
+				if len(m.mergeRequests) > 0 {
+					m.mrCursor = len(m.mergeRequests) - 1
 				}
 			case jobView:
 				if len(m.jobs) > 0 {
@@ -854,6 +957,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.pipelineCursor < 0 {
 					m.pipelineCursor = 0
 				}
+			case mergeRequestView:
+				m.mrCursor -= 5
+				if m.mrCursor < 0 {
+					m.mrCursor = 0
+				}
 			case jobView:
 				m.jobCursor -= 5
 				if m.jobCursor < 0 {
@@ -872,6 +980,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pipelineCursor += 5
 				if len(m.pipelines) > 0 && m.pipelineCursor >= len(m.pipelines) {
 					m.pipelineCursor = len(m.pipelines) - 1
+				}
+			case mergeRequestView:
+				m.mrCursor += 5
+				if len(m.mergeRequests) > 0 && m.mrCursor >= len(m.mergeRequests) {
+					m.mrCursor = len(m.mergeRequests) - 1
 				}
 			case jobView:
 				m.jobCursor += 5
@@ -980,6 +1093,15 @@ func (m model) View() string {
 		}
 		title = titleStyle.Render(fmt.Sprintf("🚀 GitLab TUI - %s | %d pipelines (%d running)",
 			projectName, len(m.pipelines), runningCount))
+	case mergeRequestView:
+		openCount := 0
+		for _, mr := range m.mergeRequests {
+			if mr.State == "opened" {
+				openCount++
+			}
+		}
+		title = titleStyle.Render(fmt.Sprintf("🚀 GitLab TUI - %s | %d merge requests (%d open)",
+			projectName, len(m.mergeRequests), openCount))
 	case jobView:
 		runningJobs := 0
 		successJobs := 0
@@ -1003,6 +1125,8 @@ func (m model) View() string {
 	switch m.currentView {
 	case pipelineView:
 		return m.renderPipelineView(title)
+	case mergeRequestView:
+		return m.renderMergeRequestView(title)
 	case jobView:
 		return m.renderJobView(title)
 	case logView:
@@ -1028,7 +1152,7 @@ func (m model) renderPipelineView(title string) string {
 		}
 	}
 
-	statusLine := fmt.Sprintf("📊 %d total | 🔄 %d running | [r] Refresh | [Enter] View Jobs",
+	statusLine := fmt.Sprintf("📊 %d total | 🔄 %d running | [r] Refresh | [Enter] View Jobs | [m] Merge Requests",
 		len(m.pipelines), runningCount)
 
 	// Implement simple scrolling - show max 10 pipelines at a time
@@ -1099,7 +1223,91 @@ func (m model) renderPipelineView(title string) string {
 		s += line + "\n"
 	}
 
-	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Ctrl+U/D: page up/down | g/G: first/last | Enter: view jobs | r: refresh | q: quit")
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Ctrl+U/D: page up/down | g/G: first/last | Enter: view jobs | r: refresh | p: pipelines | t: test results | q: quit")
+	return s
+}
+
+func (m model) renderMergeRequestView(title string) string {
+	header := headerStyle.Render("🔀 Merge Requests")
+
+	// Count MRs by state
+	openCount := 0
+	mergedCount := 0
+	closedCount := 0
+	for _, mr := range m.mergeRequests {
+		switch mr.State {
+		case "opened":
+			openCount++
+		case "merged":
+			mergedCount++
+		case "closed":
+			closedCount++
+		}
+	}
+
+	statusLine := fmt.Sprintf("📊 %d total | 🔀 %d open | ✅ %d merged | ❌ %d closed | [r] Refresh | [Enter] View Pipeline",
+		len(m.mergeRequests), openCount, mergedCount, closedCount)
+
+	s := title + "\n" + header + "\n\n" + statusLine + "\n\n"
+
+	if len(m.mergeRequests) == 0 {
+		s += "No merge requests found.\n"
+		s += "\n" + lipgloss.NewStyle().Faint(true).Render("Press 'r' to refresh | 'p' for pipelines | 'q' to quit")
+		return s
+	}
+
+	// Header row
+	s += lipgloss.NewStyle().Bold(true).Render(
+		fmt.Sprintf("%-4s %-8s %-30s %-15s %-20s %-12s",
+			"", "State", "Title", "Author", "Source → Target", "Pipeline")) + "\n"
+
+	// MR rows
+	for i, mr := range m.mergeRequests {
+		cursor := "  "
+		if m.mrCursor == i {
+			cursor = "▶ "
+		}
+
+		// State styling
+		var stateStyled string
+		switch mr.State {
+		case "opened":
+			stateStyled = runningStyle.Render("🔀 open")
+		case "merged":
+			stateStyled = successStyle.Render("✅ merged")
+		case "closed":
+			stateStyled = failedStyle.Render("❌ closed")
+		default:
+			stateStyled = pendingStyle.Render("❓ " + mr.State)
+		}
+
+		// Pipeline indicator
+		pipelineIndicator := "   -   "
+		if mr.HasPipeline {
+			pipelineIndicator = runningStyle.Render("🔄 yes")
+		}
+
+		// Format source → target
+		branchInfo := fmt.Sprintf("%s → %s",
+			truncateString(mr.SourceBranch, 10),
+			truncateString(mr.TargetBranch, 8))
+
+		line := fmt.Sprintf("%s%-8s %-30s %-15s %-20s %-12s",
+			cursor,
+			stateStyled,
+			truncateString(mr.Title, 30),
+			truncateString(mr.Author.Username, 15),
+			branchInfo,
+			pipelineIndicator)
+
+		if m.mrCursor == i {
+			line = selectedStyle.Render(line)
+		}
+
+		s += line + "\n"
+	}
+
+	s += "\n" + lipgloss.NewStyle().Faint(true).Render("Navigation: ↑/↓ or j/k | Ctrl+U/D: page up/down | g/G: first/last | Enter: view pipeline | r: refresh | p: pipelines | q: quit")
 	return s
 }
 

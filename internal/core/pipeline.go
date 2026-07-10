@@ -31,6 +31,28 @@ type Project struct {
 	Archived          bool   `json:"archived"`
 }
 
+// MergeRequest represents a GitLab merge request
+type MergeRequest struct {
+	ID           int    `json:"iid"`
+	Title        string `json:"title"`
+	State        string `json:"state"`
+	SourceBranch string `json:"source_branch"`
+	TargetBranch string `json:"target_branch"`
+	Author       struct {
+		Name     string `json:"name"`
+		Username string `json:"username"`
+	} `json:"author"`
+	WebURL      string `json:"web_url"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+	MergedAt    string `json:"merged_at,omitempty"`
+	ClosedAt    string `json:"closed_at,omitempty"`
+	ProjectID   int    `json:"project_id"`
+	ProjectName string `json:"-"` // Computed field
+	HasPipeline bool   `json:"-"` // Computed field
+	PipelineID  int    `json:"-"` // Computed field
+}
+
 // PipelineService handles pipeline operations
 type PipelineService struct {
 	// Will contain GitLab client, config, etc.
@@ -70,6 +92,84 @@ func GetMockJobs() []Job {
 		{ID: 11100006, Name: "deploy-staging", Status: "pending", Stage: "deploy"},
 		{ID: 11100007, Name: "cypress-e2e", Status: "pending", Stage: "test"},
 		{ID: 11100008, Name: "deploy-production", Status: "pending", Stage: "deploy"},
+	}
+}
+
+// GetMockMergeRequests returns mock merge request data for development
+func GetMockMergeRequests() []MergeRequest {
+	return []MergeRequest{
+		{
+			ID:           42,
+			Title:        "feat: Add real-time log streaming support",
+			State:        "opened",
+			SourceBranch: "feat/log-streaming",
+			TargetBranch: "main",
+			Author: struct {
+				Name     string `json:"name"`
+				Username string `json:"username"`
+			}{Name: "John Doe", Username: "johndoe"},
+			WebURL:       "https://gitlab.com/company/frontend-app/-/merge_requests/42",
+			CreatedAt:    "2024-08-20T10:30:00Z",
+			UpdatedAt:    "2024-08-22T07:15:00Z",
+			ProjectID:    123,
+			ProjectName:  "frontend-app",
+			HasPipeline:  true,
+			PipelineID:   1996879423,
+		},
+		{
+			ID:           41,
+			Title:        "fix: Resolve child pipeline navigation bug",
+			State:        "opened",
+			SourceBranch: "fix/child-pipeline-nav",
+			TargetBranch: "main",
+			Author: struct {
+				Name     string `json:"name"`
+				Username string `json:"username"`
+			}{Name: "Jane Smith", Username: "janesmith"},
+			WebURL:       "https://gitlab.com/company/frontend-app/-/merge_requests/41",
+			CreatedAt:    "2024-08-21T14:20:00Z",
+			UpdatedAt:    "2024-08-22T06:45:00Z",
+			ProjectID:    123,
+			ProjectName:  "frontend-app",
+			HasPipeline:  true,
+			PipelineID:   1996867272,
+		},
+		{
+			ID:           40,
+			Title:        "docs: Update README with new features",
+			State:        "merged",
+			SourceBranch: "docs/update-readme",
+			TargetBranch: "main",
+			Author: struct {
+				Name     string `json:"name"`
+				Username string `json:"username"`
+			}{Name: "Bob Wilson", Username: "bobwilson"},
+			WebURL:       "https://gitlab.com/company/frontend-app/-/merge_requests/40",
+			CreatedAt:    "2024-08-19T09:15:00Z",
+			UpdatedAt:    "2024-08-20T16:30:00Z",
+			MergedAt:     "2024-08-20T16:30:00Z",
+			ProjectID:    123,
+			ProjectName:  "frontend-app",
+			HasPipeline:  false,
+		},
+		{
+			ID:           39,
+			Title:        "refactor: Improve TUI navigation performance",
+			State:        "closed",
+			SourceBranch: "refactor/tui-performance",
+			TargetBranch: "main",
+			Author: struct {
+				Name     string `json:"name"`
+				Username string `json:"username"`
+			}{Name: "Alice Brown", Username: "alicebrown"},
+			WebURL:       "https://gitlab.com/company/frontend-app/-/merge_requests/39",
+			CreatedAt:    "2024-08-18T11:00:00Z",
+			UpdatedAt:    "2024-08-19T08:45:00Z",
+			ClosedAt:     "2024-08-19T08:45:00Z",
+			ProjectID:    123,
+			ProjectName:  "frontend-app",
+			HasPipeline:  false,
+		},
 	}
 }
 

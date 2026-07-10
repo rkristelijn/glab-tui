@@ -7,7 +7,13 @@ A beautiful, interactive Terminal User Interface (TUI) for GitLab CI/CD pipeline
 ## ⚡ Quick Start
 
 ```bash
-# The easy way
+# The easy way - choose from your repositories
+glab-tui select
+
+# Or use a specific GitLab URL
+glab-tui remote https://gitlab.com/group/project-name
+
+# Or the traditional way (from within a repo)
 npx glab-tui
 
 # Or download and run
@@ -35,12 +41,13 @@ glab-tui                    # See everything at once! 🎉
 
 - **🔄 Real-time monitoring** - Live pipeline status updates
 - **🔥 Real-time log streaming** - Stream job logs as they happen with auto-refresh ✅ **CONFIRMED WORKING**
+- **🔀 Merge request support** - View and navigate merge requests with pipeline integration ✅ **NEW FEATURE**
 - **🔗 Child pipeline support** - Navigate through mono-repo child pipelines seamlessly
 - **🎨 Beautiful interface** - Color-coded status indicators and visual formatting
-- **📊 Visual overview** - Multiple pipelines at a glance in one screen
+- **📊 Visual overview** - Multiple pipelines and merge requests at a glance in one screen
 - **⌨️ Vim-style navigation** - Complete keyboard shortcuts (hjkl, gg, G, Ctrl+U/D)
 - **🔍 Advanced log search** - Search through logs with highlighting and navigation
-- **🎯 Interactive dashboard** - Navigate through pipelines, jobs, and child pipelines
+- **🎯 Interactive dashboard** - Navigate through pipelines, jobs, merge requests, and child pipelines
 - **🔍 Better UX** - No more repetitive CLI commands for status checks
 - **🚀 Easy setup** - Uses your existing glab authentication
 
@@ -54,7 +61,8 @@ glab-tui                    # See everything at once! 🎉
 **🎯 TUI Quick Start:**
 - **First time?** Press `r` to refresh and load pipelines
 - **Navigate:** Use ↑/↓ arrows or `j`/`k` (vim-style)
-- **Drill down:** Press `Enter` to go: Pipelines → Jobs → Logs
+- **Switch views:** Press `p` for pipelines, `m` for merge requests
+- **Drill down:** Press `Enter` to go: Pipelines → Jobs → Logs, or MRs → Pipeline Jobs → Logs
 - **Child pipelines:** Press `Enter` on 🔗 entries to navigate to child pipeline jobs
 - **Real-time logs:** Press `l` on any job for live streaming
 - **Search logs:** Press `/` to search, `n` for next match
@@ -80,9 +88,11 @@ glab-tui                    # See everything at once! 🎉
 | `j/k` or `↓/↑` | Navigate up/down |
 | `g` / `G` | Go to first/last item |
 | `Ctrl+U/D` | Page up/down |
-| `Enter` | Drill down (Pipeline → Jobs → Logs) |
+| `Enter` | Drill down (Pipeline → Jobs → Logs, MR → Pipeline Jobs → Logs) |
 | `Esc` | Go back |
-| `r` | Refresh |
+| `p` | Switch to pipelines view |
+| `m` | Switch to merge requests view |
+| `r` | Refresh current view |
 | `/` | Search (in logs) |
 | `n` | Next search match |
 | `?` | Help |
@@ -116,6 +126,7 @@ go install github.com/rkristelijn/glab-tui@latest
 |---------|----------|----------|
 | **Visual Overview** | ❌ Plain text | ✅ Color-coded dashboard |
 | **Multi-pipeline View** | ❌ One at a time | ✅ All at once |
+| **Merge Request View** | ❌ Separate commands | ✅ Integrated MR view with pipeline links |
 | **Navigation** | ❌ Type commands | ✅ Vim-style shortcuts |
 | **Real-time Updates** | ❌ Manual refresh | ✅ Live monitoring |
 | **Child Pipelines** | ❌ Not visible | ✅ Full navigation support |
@@ -126,19 +137,19 @@ go install github.com/rkristelijn/glab-tui@latest
 ## 🎨 Interface Preview
 
 ```
-┌─ GitLab TUI - group/project-name | 10 pipelines (3 running) ─────────┐
-│ [P]ipelines [J]obs [L]ogs                                         [?] │
+┌─ GitLab TUI - group/project-name | 4 merge requests (2 open) ──────────┐
+│ [P]ipelines [M]erge Requests [J]obs [L]ogs                         [?] │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ Pipelines                                               ↻ Auto-refresh │
-│ ● #1234567  running   feat/new-feature    (2m ago)  [●●●○○○] 3/6 jobs │
-│ ✓ #1234566  success   main                (1h ago)  [●●●●●●] 6/6 jobs │
-│ ✗ #1234565  failed    fix/bug-123         (2h ago)  [●●●✗○○] failed   │
+│ Merge Requests                                          ↻ Auto-refresh │
+│ ▶ 🔀 open    feat: Add real-time log streaming    johndoe   feat → main  🔄 yes │
+│   🔀 open    fix: Child pipeline navigation bug   janesmith fix → main   🔄 yes │
+│   ✅ merged  docs: Update README with features    bobwilson docs → main     -   │
+│   ❌ closed  refactor: Improve TUI performance    alice     refactor → main  -   │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ Jobs (Pipeline #1234567)                                               │
+│ Pipeline Jobs (from MR #42)                                            │
 │ ✓ build          success   (45s)   Dependencies installed             │
 │ ● test           running   (12s)   Running test suite...              │
 │ 🔗 ● app-portal #1997363518    running   Child pipeline                    │
-│ 🔗 ● app-demo #1997363434  running   Child pipeline               │
 │ ○ deploy         pending           Waiting for tests                   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
